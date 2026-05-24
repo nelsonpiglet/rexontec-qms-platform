@@ -1,0 +1,58 @@
+# ── 敏感資料 / 金鑰 ───────────────────────────────
+service_account.json
+*.json.key
+*_credentials.json
+*.pem
+*.p12
+
+# ── Streamlit secrets ────────────────────────────
+.streamlit/secrets.toml
+
+# ── Python cache ─────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+.Python
+
+# ── 虛擬環境 ──────────────────────────────────────
+venv/
+.venv/
+env/
+.env/
+ENV/
+pythonenv*/
+
+# ── 環境變數 ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── 暫存 / 輸出檔 ─────────────────────────────────
+_tmp_ids.txt
+*.tmp
+*.log
+*.bak
+*.swp
+*.pdf
+*.xlsx
+*.xls
+
+# ── 系統檔 ───────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bat
+
+# ── IDE ──────────────────────────────────────────
+.vscode/
+.idea/
+*.code-workspace
+
+# ── 本地測試 / 開發工具 ───────────────────────────
+ngrok*
+*.ngrok*
+
+# ── 圖片快取（若有）──────────────────────────────
+*.cache
+.cache/

@@ -1,0 +1,171 @@
+"""
+REXONTEC 力科 IQC — 零件庫與檢驗項目定義
+依照力科IQC檢驗.html 內容移植
+支援 JSON 設定檔（config/iqc_parts.json）覆寫
+"""
+import os, json
+
+CONFIG_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'iqc_parts.json')
+
+# ─── 預設零件庫 ────────────────────────────────────────
+_DEFAULT_PARTS = [
+    {
+        "group": "機構件",
+        "id": "PJ2-BACKCLIP",
+        "name": "背扣組件",
+        "pn": "1332-000-00086",
+        "machine": "PJ2 GPS",
+        "vendor": "志泰",
+        "icon": "🔩",
+        "docNo": "ISO-QC3006-31",
+        "samplingStd": "MIL-STD-105E S-4",
+        "aql": {"cr": 0, "ma": 0.65, "mi": 1.5},
+        "alert": "前批病歷：孔徑 1.90mm（志泰），本批執行 100% 孔徑全檢",
+        "sections": [
+            {
+                "id": "dim",
+                "label": "尺寸規格檢驗",
+                "sublabel": "量測工具：游標卡尺 (0.01mm)",
+                "items": [
+                    {
+                        "id": 1, "grade": "CR",
+                        "name": "關鍵孔徑尺寸（插銷穿入孔）",
+                        "spec": "φ 2.2mm ± 0.05mm",
+                        "specDetail": "允許範圍：2.15 ～ 2.25 mm",
+                        "tool": "游標卡尺 精度 0.01mm",
+                        "alert": "病歷：前批 1.90mm",
+                        "autoFail": True,
+                        "inputs": [
+                            {"key": "d1", "label": "量測值 #1", "unit": "mm", "min": 2.15, "max": 2.25},
+                            {"key": "d2", "label": "量測值 #2", "unit": "mm", "min": 2.15, "max": 2.25},
+                            {"key": "d3", "label": "量測值 #3", "unit": "mm", "min": 2.15, "max": 2.25},
+                        ],
+                    },
+                    {
+                        "id": 2, "grade": "MI",
+                        "name": "鎖孔位置符合工程圖面",
+                        "spec": "位置依工程圖面",
+                        "specDetail": "偏差不可影響組裝",
+                        "tool": "工程圖面 量規",
+                        "alert": "", "autoFail": False, "inputs": [],
+                    },
+                ],
+            },
+            {
+                "id": "vis",
+                "label": "外觀品質檢驗",
+                "sublabel": "量測工具：目視 / 參考樣品",
+                "items": [
+                    {"id": 3, "grade": "MA", "name": "本體無缺料",
+                     "spec": "無缺口、缺角、塌陷", "specDetail": "塑膠流動不足亦判 NG",
+                     "tool": "目視", "alert": "", "autoFail": False, "inputs": []},
+                    {"id": 4, "grade": "MA", "name": "本體無髒污",
+                     "spec": "無油漬、粉塵、油墨汙染", "specDetail": "異物一律 NG",
+                     "tool": "目視", "alert": "", "autoFail": False, "inputs": []},
+                    {"id": 5, "grade": "MA", "name": "無毛邊（影響組裝）",
+                     "spec": "無毛邊突出影響穿入", "specDetail": "目視判定",
+                     "tool": "目視", "alert": "", "autoFail": False, "inputs": []},
+                    {"id": 6, "grade": "MI", "name": "無雜質 / 輕微毛邊",
+                     "spec": "細微毛邊不影響功能", "specDetail": "目視確認",
+                     "tool": "目視", "alert": "", "autoFail": False, "inputs": []},
+                    {"id": 7, "grade": "MA", "name": "表面刮傷判定",
+                     "spec": "嚴重(MA)：長>2mm & >2條", "specDetail": "輕微(MI)：未達條件可讓步",
+                     "tool": "目視 卡尺", "alert": "", "autoFail": False,
+                     "inputs": [
+                         {"key": "s_len", "label": "最長刮傷", "unit": "mm"},
+                         {"key": "s_cnt", "label": "條數", "unit": "條"},
+                     ]},
+                ],
+            },
+            {
+                "id": "func",
+                "label": "功能 / 實裝檢驗",
+                "sublabel": "實配樣品：插銷 φ2.0mm，最少 2 PCS",
+                "items": [
+                    {"id": 8, "grade": "MA",
+                     "name": "實裝配合性（插銷穿入測試）",
+                     "spec": "插銷 2.0mm 順暢穿入，無卡阻",
+                     "specDetail": "不少於 2 PCS",
+                     "tool": "實配樣品", "alert": "與孔徑NG直接相關",
+                     "autoFail": False,
+                     "inputs": [{"key": "pcs", "label": "實裝件數", "unit": "PCS", "min": 2}]},
+                ],
+            },
+        ],
+    },
+    {
+        "group": "電子元件",
+        "id": "PJ2-MIC",
+        "name": "麥克風（電容式）",
+        "pn": "1232-200-00004",
+        "machine": "PJ2 GPS",
+        "vendor": "待確認",
+        "icon": "🎙️",
+        "docNo": "ISO-QC3006-33",
+        "samplingStd": "MIL-STD-105E S-4",
+        "aql": {"cr": 0, "ma": 0.65, "mi": 1.5},
+        "alert": "",
+        "sections": [
+            {
+                "id": "vis3",
+                "label": "外觀 / 標示檢驗",
+                "sublabel": "目視 + 放大鏡",
+                "items": [
+                    {"id": 1, "grade": "CR",
+                     "name": "料號 / 規格標示確認",
+                     "spec": "料號：1232-200-00004",
+                     "specDetail": "無錯料",
+                     "tool": "目視", "alert": "", "autoFail": False, "inputs": []},
+                    {"id": 2, "grade": "MA",
+                     "name": "針腳外觀（無彎折/氧化）",
+                     "spec": "針腳平直，無明顯氧化",
+                     "specDetail": "方向朝上",
+                     "tool": "目視", "alert": "", "autoFail": False, "inputs": []},
+                ],
+            },
+            {
+                "id": "elec",
+                "label": "電氣特性確認",
+                "sublabel": "電阻計",
+                "items": [
+                    {"id": 3, "grade": "CR",
+                     "name": "阻抗確認（實測）",
+                     "spec": "600Ω ± 15%（525 ～ 690Ω）",
+                     "specDetail": "依規格書",
+                     "tool": "電阻計 1Ω",
+                     "alert": "", "autoFail": True,
+                     "inputs": [{"key": "imp", "label": "實測阻抗", "unit": "Ω", "min": 525, "max": 690}]},
+                ],
+            },
+        ],
+    },
+]
+
+
+def get_parts() -> list:
+    """讀取零件庫；不存在時自動建立預設並回傳"""
+    try:
+        with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return data.get('parts', _DEFAULT_PARTS)
+    except FileNotFoundError:
+        _save_parts(_DEFAULT_PARTS)
+        return _DEFAULT_PARTS
+    except Exception:
+        return _DEFAULT_PARTS
+
+
+def save_parts(parts: list) -> None:
+    """公開：儲存零件庫到 config/iqc_parts.json"""
+    _save_parts(parts)
+
+
+def _save_parts(parts: list) -> None:
+    os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump({"parts": parts}, f, ensure_ascii=False, indent=2)
+
+
+def get_all_items_flat(part: dict) -> list:
+    """展開 sections 的所有 items 為一維 list"""
+    return [item for sec in part.get('sections', []) for item in sec.get('items', [])]

@@ -1,0 +1,25 @@
+{
+  "users": [
+    {
+      "username": "Nelson_tsai",
+      "display_name": "蔡承叡",
+      "password_hash": "621167010ed9c8fee160973057e9188b5ca772ed85c320421fa49b1b6446be10",
+      "salt": "bd9871f2bd97a49b599a9aa3a4bf966f",
+      "role": "admin",
+      "status": "active",
+      "created_at": "2026-05-21 15:46",
+      "approved_by": "system"
+    },
+    {
+      "username": "amy",
+      "display_name": "彭碧霞",
+      "password_hash": "b5798e669b0029129d59c7a3d98d9814db6ff2515692f01a222f8f7c26debcac",
+      "salt": "8fe84b728ce1a399b66f3517062690a6",
+      "role": "inspector",
+      "status": "active",
+      "created_at": "2026-05-21 16:16",
+      "approved_by": ""
+    }
+  ],
+  "auto_login_admin": ""
+}

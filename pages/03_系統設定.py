@@ -1,0 +1,903 @@
+"""
+REXONTEC 力科 OQC — 系統設定
+管理：機種清單、客戶、檢驗員、製造組別、ESC/Motor 檢驗項目
+"""
+import streamlit as st
+import copy
+
+from utils.style import QMS_CSS, topbar, page_header
+from utils.inspection_data import get_config, save_config, _DEFAULT_CONFIG
+from utils.iqc_data import get_parts, save_parts
+from utils.auth import (
+    require_login, user_info_bar,
+    get_auto_login_admin, set_auto_login_admin,
+    get_all_users,
+)
+
+# ── 頁面設定 ────────────────────────────────────────
+st.set_page_config(
+    page_title="REXONTEC 力科 | OQC 系統設定",
+    page_icon="⚙️",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+st.markdown(QMS_CSS, unsafe_allow_html=True)
+st.markdown(topbar(), unsafe_allow_html=True)
+require_login()   # 所有登入使用者皆可進入
+user_info_bar()
+
+# ── 導覽列 ──────────────────────────────────────────
+col_nav1, col_nav2, col_nav3, col_nav4 = st.columns([1, 1, 1, 5])
+with col_nav1:
+    if st.button("🏠 指揮平台", use_container_width=True):
+        st.switch_page("app.py")
+with col_nav2:
+    if st.button("📋 檢驗輸入", use_container_width=True):
+        st.switch_page("pages/01_出廠檢驗輸入.py")
+with col_nav3:
+    if st.button("📊 儀表板", use_container_width=True):
+        st.switch_page("pages/02_儀表板.py")
+
+st.markdown(page_header("系統設定", "機種 / 客戶 / 檢驗員 / 檢驗項目管理", "SET"),
+            unsafe_allow_html=True)
+
+# ── 額外 CSS ────────────────────────────────────────
+st.markdown("""
+<style>
+.set-section {
+  background:#fff; border:1px solid var(--border); border-radius:8px;
+  padding:16px 18px; margin-bottom:14px; box-shadow:var(--sh);
+}
+.set-label {
+  font-size:13px; font-weight:700; color:var(--navy); margin-bottom:10px;
+  display:flex; align-items:center; gap:8px;
+}
+.tag-chip {
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--bg); border:1px solid var(--border2);
+  border-radius:20px; padding:3px 10px 3px 12px;
+  font-size:12px; color:var(--text); margin:3px;
+}
+.item-row {
+  background:#fafbfc; border:1px solid var(--border);
+  border-radius:6px; padding:10px 14px; margin-bottom:6px;
+}
+.item-num { font-size:11px; color:var(--muted); }
+.item-name { font-size:13px; font-weight:700; color:var(--navy); }
+.item-spec { font-size:11.5px; color:var(--muted); margin-top:2px; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── 讀取設定 ─────────────────────────────────────────
+cfg = get_config()
+
+# ── helper：儲存並重跑 ─────────────────────────────────
+def _save_and_rerun(new_cfg: dict):
+    save_config(new_cfg)
+    st.rerun()
+
+# ═══════════════════════════════════════════════════
+# Tab 切換
+# ═══════════════════════════════════════════════════
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "⚙️ 基本設定",
+    "⚡ 電調 ESC 檢驗項目",
+    "🔧 馬達 Motor 檢驗項目",
+    "🔬 IQC 零件庫",
+    "🔐 登入設定",
+])
+
+# ───────────────────────────────────────────────────
+# TAB 1：基本設定（機種、客戶、檢驗員、製造組別）
+# ───────────────────────────────────────────────────
+with tab1:
+    def list_editor(label: str, icon: str, cfg_key: str, placeholder: str):
+        """通用清單編輯器（新增 / 刪除）"""
+        items: list = cfg.get(cfg_key, [])
+        st.markdown(f'<div class="set-label">{icon} {label}</div>', unsafe_allow_html=True)
+
+        # 顯示現有項目（每個後面有刪除按鈕）
+        for idx, item in enumerate(items):
+            c1, c2 = st.columns([8, 1])
+            with c1:
+                lock = "🔒 " if item == "其他" else ""
+                st.markdown(
+                    f'<div class="tag-chip">{lock}{item}</div>',
+                    unsafe_allow_html=True,
+                )
+            with c2:
+                if item != "其他":
+                    if st.button("✕", key=f"del_{cfg_key}_{idx}", help=f"刪除 {item}"):
+                        new_cfg = copy.deepcopy(cfg)
+                        new_cfg[cfg_key].pop(idx)
+                        _save_and_rerun(new_cfg)
+
+        # 新增輸入框
+        new_key = f"new_{cfg_key}"
+        col_inp, col_add = st.columns([5, 1])
+        with col_inp:
+            new_val = st.text_input(
+                f"新增 {label}", key=new_key, placeholder=placeholder,
+                label_visibility="collapsed",
+            )
+        with col_add:
+            if st.button("＋ 新增", key=f"add_{cfg_key}", use_container_width=True):
+                nv = new_val.strip()
+                if nv and nv not in items:
+                    new_cfg = copy.deepcopy(cfg)
+                    # 插入在「其他」之前
+                    if "其他" in new_cfg[cfg_key]:
+                        pos = new_cfg[cfg_key].index("其他")
+                        new_cfg[cfg_key].insert(pos, nv)
+                    else:
+                        new_cfg[cfg_key].append(nv)
+                    _save_and_rerun(new_cfg)
+                elif not nv:
+                    st.warning("請先輸入名稱")
+                else:
+                    st.warning(f"「{nv}」已存在")
+        st.markdown("<hr style='border:none;border-top:1px solid var(--border);margin:12px 0'>",
+                    unsafe_allow_html=True)
+
+    list_editor("電調機種", "⚡", "esc_models",   "例：ES2000RX (80A)")
+    list_editor("馬達機種", "🔧", "motor_models", "例：MD3005RX (28馬達)")
+    list_editor("客戶",    "🏢", "customers",    "例：台灣虎航")
+    list_editor("檢驗員",  "👤", "inspectors",   "例：彭碧霞")
+    list_editor("主管(品保)","👔","supervisors",  "例：李副理")
+    list_editor("製造組別","🏭", "mfg_groups",   "例：D 組")
+
+    # 重設為預設值
+    st.markdown("<br>", unsafe_allow_html=True)
+    with st.expander("⚠️ 危險操作 — 還原預設值"):
+        st.warning("此操作將**清除所有自訂設定**，還原成出廠預設值，無法復原！")
+        if st.button("🔄 還原所有設定為預設值", type="primary"):
+            _save_and_rerun(copy.deepcopy(_DEFAULT_CONFIG))
+
+
+# ───────────────────────────────────────────────────
+# 共用：檢驗項目編輯器（ESC / Motor）
+# ───────────────────────────────────────────────────
+def inspection_item_editor(product_type: str, sections_key: str):
+    cfg_local = get_config()          # 每次重新讀取
+    sections: list = cfg_local.get(sections_key, [])
+
+    # ── 新增 Section ──────────────────────────────
+    with st.expander("➕ 新增檢驗類別（Section）", expanded=False):
+        c1, c2, c3 = st.columns([2, 4, 4])
+        with c1:
+            new_sec_id    = st.text_input("代號", key=f"ns_id_{product_type}",
+                                          placeholder="D", max_chars=4)
+        with c2:
+            new_sec_label = st.text_input("類別名稱", key=f"ns_lb_{product_type}",
+                                          placeholder="例：電氣安規測試類")
+        with c3:
+            new_sec_sub   = st.text_input("副標題", key=f"ns_su_{product_type}",
+                                          placeholder="例：高壓安規設備")
+        if st.button("新增類別", key=f"ns_add_{product_type}", type="primary"):
+            nid = new_sec_id.strip().upper()
+            existing_ids = [s["id"] for s in sections]
+            if not nid or not new_sec_label.strip():
+                st.warning("代號與名稱不可空白")
+            elif nid in existing_ids:
+                st.warning(f"代號「{nid}」已存在")
+            else:
+                new_cfg = copy.deepcopy(cfg_local)
+                new_cfg[sections_key].append({
+                    "id": nid,
+                    "label": new_sec_label.strip(),
+                    "subtitle": new_sec_sub.strip(),
+                    "items": [],
+                })
+                _save_and_rerun(new_cfg)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── 各 Section ────────────────────────────────
+    for sec_idx, sec in enumerate(sections):
+        sec_id    = sec["id"]
+        sec_label = sec["label"]
+        items     = sec.get("items", [])
+
+        # Section 標題列
+        hcol1, hcol2, hcol3 = st.columns([7, 1, 1])
+        with hcol1:
+            st.markdown(
+                f'<div style="font-size:14px;font-weight:700;color:var(--navy);'
+                f'border-left:4px solid var(--blue2);padding-left:10px;margin-bottom:6px">'
+                f'{sec_id}｜{sec_label}'
+                f'<span style="font-size:11px;color:var(--muted);margin-left:8px">'
+                f'{sec.get("subtitle","")}</span></div>',
+                unsafe_allow_html=True,
+            )
+        with hcol2:
+            # 刪除整個 Section（僅在無項目時）
+            if not items:
+                if st.button("刪除", key=f"del_sec_{product_type}_{sec_idx}",
+                             help="刪除此空白類別"):
+                    new_cfg = copy.deepcopy(cfg_local)
+                    new_cfg[sections_key].pop(sec_idx)
+                    _save_and_rerun(new_cfg)
+            else:
+                st.caption(f"{len(items)} 項")
+
+        # 展開：顯示所有項目
+        with st.expander(f"展開 {sec_id} 的 {len(items)} 個檢驗項目", expanded=False):
+
+            # ── 現有項目 ──────────────────────────
+            for item_idx, item in enumerate(items):
+                iid   = item["id"]
+                itype = item.get("type", "pf")
+
+                with st.container():
+                    _grade_var = {"CR": "cr", "MA": "ma", "MI": "mi"}.get(item["grade"], "mi")
+                    st.markdown(
+                        f'<div class="item-row">'
+                        f'<div class="item-num">No.{item["no"]}  {iid}  '
+                        f'<b style="color:var(--{_grade_var})">'
+                        f'{item["grade"]}</b></div>'
+                        f'<div class="item-name">{item["name"]}</div>'
+                        f'<div class="item-spec">規格：{item["spec"]}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+                    ec1, ec2, ec3, ec4 = st.columns([3, 4, 1, 1])
+                    with ec1:
+                        new_name = st.text_input(
+                            "項目名稱", value=item["name"],
+                            key=f"ename_{product_type}_{sec_idx}_{item_idx}",
+                            label_visibility="collapsed",
+                        )
+                    with ec2:
+                        new_spec = st.text_input(
+                            "規格標準", value=item["spec"],
+                            key=f"espec_{product_type}_{sec_idx}_{item_idx}",
+                            label_visibility="collapsed",
+                        )
+                    with ec3:
+                        if st.button("✏️ 儲存", key=f"esave_{product_type}_{sec_idx}_{item_idx}",
+                                     use_container_width=True):
+                            new_cfg = copy.deepcopy(cfg_local)
+                            new_cfg[sections_key][sec_idx]["items"][item_idx]["name"] = new_name.strip() or item["name"]
+                            new_cfg[sections_key][sec_idx]["items"][item_idx]["spec"] = new_spec.strip() or item["spec"]
+                            _save_and_rerun(new_cfg)
+                    with ec4:
+                        if st.button("🗑️ 刪除", key=f"edel_{product_type}_{sec_idx}_{item_idx}",
+                                     use_container_width=True):
+                            new_cfg = copy.deepcopy(cfg_local)
+                            new_cfg[sections_key][sec_idx]["items"].pop(item_idx)
+                            _save_and_rerun(new_cfg)
+
+                    # 數值型項目：顯示 min/max 編輯
+                    if itype == "num":
+                        nc1, nc2, nc3, nc4 = st.columns([2, 2, 2, 2])
+                        with nc1:
+                            st.caption(f"單位：{item.get('unit','')}")
+                        with nc2:
+                            cur_min = "" if item.get("min") is None else str(item["min"])
+                            new_min = st.text_input(
+                                "最小值", value=cur_min,
+                                key=f"emin_{product_type}_{sec_idx}_{item_idx}",
+                                placeholder="無限制",
+                                label_visibility="visible",
+                            )
+                        with nc3:
+                            cur_max = "" if item.get("max") is None else str(item["max"])
+                            new_max = st.text_input(
+                                "最大值", value=cur_max,
+                                key=f"emax_{product_type}_{sec_idx}_{item_idx}",
+                                placeholder="無限制",
+                                label_visibility="visible",
+                            )
+                        with nc4:
+                            st.caption("")
+                            if st.button("更新範圍", key=f"erange_{product_type}_{sec_idx}_{item_idx}"):
+                                new_cfg = copy.deepcopy(cfg_local)
+                                try:
+                                    new_cfg[sections_key][sec_idx]["items"][item_idx]["min"] = \
+                                        float(new_min) if new_min.strip() else None
+                                    new_cfg[sections_key][sec_idx]["items"][item_idx]["max"] = \
+                                        float(new_max) if new_max.strip() else None
+                                    _save_and_rerun(new_cfg)
+                                except ValueError:
+                                    st.error("最小值/最大值請填入數字")
+
+                st.markdown("---")
+
+            # ── 新增項目表單 ───────────────────────
+            st.markdown(
+                f'<div style="font-size:12px;font-weight:700;color:var(--blue2);margin-bottom:8px">'
+                f'➕ 新增項目至 {sec_id}｜{sec_label}</div>',
+                unsafe_allow_html=True,
+            )
+            f1, f2, f3, f4 = st.columns([3, 4, 1, 1])
+            with f1:
+                ni_name  = st.text_input("項目名稱*", key=f"ni_name_{product_type}_{sec_idx}",
+                                         placeholder="例：絕緣電阻測試")
+            with f2:
+                ni_spec  = st.text_input("規格標準*", key=f"ni_spec_{product_type}_{sec_idx}",
+                                         placeholder="例：≧100 MΩ")
+            with f3:
+                ni_grade = st.selectbox("等級", ["MA", "CR", "MI"],
+                                        key=f"ni_grade_{product_type}_{sec_idx}")
+            with f4:
+                ni_type  = st.selectbox("類型", ["pf（通過/失敗）", "num（數值量測）"],
+                                        key=f"ni_type_{product_type}_{sec_idx}")
+
+            ni_tool = st.text_input("量測工具", key=f"ni_tool_{product_type}_{sec_idx}",
+                                    placeholder="例：耐壓測試機")
+
+            # 若選數值型，顯示額外欄位
+            type_key = "num" if ni_type.startswith("num") else "pf"
+            if type_key == "num":
+                u1, u2, u3 = st.columns(3)
+                with u1:
+                    ni_unit = st.text_input("單位", key=f"ni_unit_{product_type}_{sec_idx}",
+                                            placeholder="例：MΩ")
+                with u2:
+                    ni_min_s = st.text_input("最小值（空白=無限制）",
+                                             key=f"ni_min_{product_type}_{sec_idx}")
+                with u3:
+                    ni_max_s = st.text_input("最大值（空白=無限制）",
+                                             key=f"ni_max_{product_type}_{sec_idx}")
+            else:
+                ni_unit = ""; ni_min_s = ""; ni_max_s = ""
+
+            if st.button(f"新增項目", key=f"ni_add_{product_type}_{sec_idx}", type="primary"):
+                if not ni_name.strip() or not ni_spec.strip():
+                    st.warning("項目名稱與規格標準不可空白")
+                else:
+                    # 自動編號：sec_id + (現有數量+1)
+                    new_iid = f"{sec_id}{len(items)+1}"
+                    new_no  = f"{len(items)+1}.0"
+                    new_item = {
+                        "id": new_iid, "no": new_no,
+                        "name": ni_name.strip(),
+                        "spec": ni_spec.strip(),
+                        "grade": ni_grade,
+                        "type": type_key,
+                        "tool": ni_tool.strip(),
+                    }
+                    if type_key == "num":
+                        new_item["unit"] = ni_unit.strip()
+                        try:
+                            new_item["min"] = float(ni_min_s) if ni_min_s.strip() else None
+                            new_item["max"] = float(ni_max_s) if ni_max_s.strip() else None
+                        except ValueError:
+                            st.error("最小值/最大值請填入數字")
+                            st.stop()
+                    new_cfg = copy.deepcopy(cfg_local)
+                    new_cfg[sections_key][sec_idx]["items"].append(new_item)
+                    _save_and_rerun(new_cfg)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+
+# ───────────────────────────────────────────────────
+# TAB 2：電調 ESC 檢驗項目
+# ───────────────────────────────────────────────────
+with tab2:
+    inspection_item_editor("esc", "esc_sections")
+
+# ───────────────────────────────────────────────────
+# TAB 3：馬達 Motor 檢驗項目
+# ───────────────────────────────────────────────────
+with tab3:
+    inspection_item_editor("motor", "motor_sections")
+
+
+# ───────────────────────────────────────────────────
+# TAB 4：IQC 零件庫管理
+# ───────────────────────────────────────────────────
+with tab4:
+    st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#f7f9fc;border:1px solid var(--border);
+            border-left:4px solid #1565c0;border-radius:6px;padding:10px 14px">
+  管理 IQC 進料檢驗零件庫：新增 / 修改零件基本資料、檢驗 Section、檢驗項目與量測欄位
+</div>
+""", unsafe_allow_html=True)
+
+    iqc_parts = get_parts()
+
+    def _iqc_save(new_parts):
+        save_parts(new_parts)
+        st.rerun()
+
+    # ── 從現有零件複製新增 ──────────────────────
+    if iqc_parts:
+        st.markdown(
+            '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+            '📋 快速複製現有零件作為新零件的起點：</div>',
+            unsafe_allow_html=True,
+        )
+        copy_options = {f"{p.get('icon','📦')} {p['name']}  ({p['id']})": i
+                        for i, p in enumerate(iqc_parts)}
+        cc1, cc2 = st.columns([5, 1])
+        with cc1:
+            copy_sel = st.selectbox(
+                "選擇來源零件",
+                options=list(copy_options.keys()),
+                key="iqc_copy_sel",
+                label_visibility="collapsed",
+            )
+        with cc2:
+            if st.button("🔁 複製此零件", use_container_width=True, key="iqc_do_copy"):
+                src_idx  = copy_options[copy_sel]
+                new_p    = copy.deepcopy(iqc_parts[src_idx])
+                base_id  = new_p["id"]
+                existing = {p["id"] for p in iqc_parts}
+                suffix   = "-COPY"
+                n = 2
+                while (base_id + suffix) in existing:
+                    suffix = f"-COPY{n}"; n += 1
+                new_p["id"]   = base_id + suffix
+                new_p["name"] = "（複製）" + new_p["name"]
+                _iqc_save(iqc_parts + [new_p])
+
+        st.markdown(
+            "<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>",
+            unsafe_allow_html=True,
+        )
+
+    # ── 新增全新零件 ────────────────────────────
+    with st.expander("➕ 新增全新零件", expanded=False):
+        pc1, pc2, pc3 = st.columns(3)
+        with pc1:
+            np_group  = st.text_input("群組", key="np_group", placeholder="例：機構件")
+            np_id     = st.text_input("零件ID*", key="np_id", placeholder="例：PJ2-COVER")
+        with pc2:
+            np_name   = st.text_input("零件名稱*", key="np_name", placeholder="例：上蓋")
+            np_pn     = st.text_input("料號", key="np_pn", placeholder="例：1332-000-00099")
+        with pc3:
+            np_vendor = st.text_input("供應商", key="np_vendor", placeholder="例：志泰")
+            np_machine= st.text_input("機種", key="np_machine", placeholder="例：PJ2 GPS")
+        pc4, pc5, pc6 = st.columns(3)
+        with pc4:
+            np_doc    = st.text_input("文件編號", key="np_doc", placeholder="ISO-QC3006-XX")
+        with pc5:
+            np_std    = st.text_input("抽樣標準", key="np_std", placeholder="MIL-STD-105E S-4")
+        with pc6:
+            np_icon   = st.text_input("圖示(emoji)", key="np_icon", placeholder="🔩", max_chars=4)
+        aql_c1, aql_c2, aql_c3 = st.columns(3)
+        with aql_c1:
+            np_aql_cr = st.number_input("AQL CR", value=0.0, step=0.1, format="%.2f", key="np_aql_cr")
+        with aql_c2:
+            np_aql_ma = st.number_input("AQL MA", value=0.65, step=0.05, format="%.2f", key="np_aql_ma")
+        with aql_c3:
+            np_aql_mi = st.number_input("AQL MI", value=1.5,  step=0.1,  format="%.2f", key="np_aql_mi")
+        np_alert = st.text_area("警示文字", key="np_alert", height=60, placeholder="前批病歷說明…")
+
+        if st.button("✅ 新增零件", key="np_add", type="primary"):
+            pid = np_id.strip().upper()
+            if not pid or not np_name.strip():
+                st.warning("零件ID 與名稱不可空白")
+            elif any(p["id"] == pid for p in iqc_parts):
+                st.warning(f"零件ID「{pid}」已存在")
+            else:
+                new_p = {
+                    "group": np_group.strip() or "其他",
+                    "id": pid,
+                    "name": np_name.strip(),
+                    "pn": np_pn.strip(),
+                    "machine": np_machine.strip(),
+                    "vendor": np_vendor.strip(),
+                    "icon": np_icon.strip() or "📦",
+                    "docNo": np_doc.strip(),
+                    "samplingStd": np_std.strip(),
+                    "aql": {"cr": np_aql_cr, "ma": np_aql_ma, "mi": np_aql_mi},
+                    "alert": np_alert.strip(),
+                    "sections": [],
+                }
+                _iqc_save(iqc_parts + [new_p])
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── 各零件管理 ───────────────────────────────
+    for p_idx, p in enumerate(iqc_parts):
+        with st.expander(
+            f"{p.get('icon','📦')}  {p['name']}  ·  {p['pn']}  ·  {p.get('group','')}",
+            expanded=False,
+        ):
+            # ── 基本資料編輯 ────────────────────
+            st.markdown(
+                '<div style="font-size:11.5px;font-weight:700;color:var(--blue2);'
+                'margin-bottom:8px">基本資料</div>',
+                unsafe_allow_html=True,
+            )
+            bi1, bi2, bi3 = st.columns(3)
+            with bi1:
+                e_name   = st.text_input("零件名稱", value=p["name"],
+                                         key=f"e_name_{p_idx}")
+                e_pn     = st.text_input("料號",     value=p.get("pn",""),
+                                         key=f"e_pn_{p_idx}")
+            with bi2:
+                e_vendor = st.text_input("供應商",   value=p.get("vendor",""),
+                                         key=f"e_vendor_{p_idx}")
+                e_machine= st.text_input("機種",     value=p.get("machine",""),
+                                         key=f"e_machine_{p_idx}")
+            with bi3:
+                e_doc    = st.text_input("文件編號", value=p.get("docNo",""),
+                                         key=f"e_doc_{p_idx}")
+                e_std    = st.text_input("抽樣標準", value=p.get("samplingStd",""),
+                                         key=f"e_std_{p_idx}")
+            e_alert = st.text_input("警示文字", value=p.get("alert",""),
+                                    key=f"e_alert_{p_idx}")
+            bc1, bc2, bc3 = st.columns([4, 1, 1])
+            with bc1:
+                if st.button("💾 儲存基本資料", key=f"e_save_{p_idx}"):
+                    new_parts = copy.deepcopy(iqc_parts)
+                    new_parts[p_idx].update({
+                        "name": e_name.strip() or p["name"],
+                        "pn": e_pn.strip(),
+                        "vendor": e_vendor.strip(),
+                        "machine": e_machine.strip(),
+                        "docNo": e_doc.strip(),
+                        "samplingStd": e_std.strip(),
+                        "alert": e_alert.strip(),
+                    })
+                    _iqc_save(new_parts)
+            with bc2:
+                if st.button("🔁 複製", key=f"e_copy_{p_idx}",
+                             help="複製此零件（含所有檢驗項目）作為新零件"):
+                    new_p   = copy.deepcopy(p)
+                    base_id = p["id"]
+                    existing = {pp["id"] for pp in iqc_parts}
+                    suffix = "-COPY"; n = 2
+                    while (base_id + suffix) in existing:
+                        suffix = f"-COPY{n}"; n += 1
+                    new_p["id"]   = base_id + suffix
+                    new_p["name"] = "（複製）" + p["name"]
+                    _iqc_save(iqc_parts + [new_p])
+            with bc3:
+                if st.button("🗑️ 刪除", key=f"e_del_{p_idx}",
+                             help="刪除此零件（無法復原）"):
+                    new_parts = copy.deepcopy(iqc_parts)
+                    new_parts.pop(p_idx)
+                    _iqc_save(new_parts)
+
+            st.markdown(
+                "<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>",
+                unsafe_allow_html=True,
+            )
+
+            # ── 新增 Section ────────────────────
+            st.markdown(
+                '<div style="font-size:11.5px;font-weight:700;color:var(--blue2);'
+                'margin-bottom:8px">檢驗類別 (Sections)</div>',
+                unsafe_allow_html=True,
+            )
+            with st.expander("➕ 新增檢驗類別", expanded=False):
+                ns1, ns2, ns3 = st.columns(3)
+                with ns1:
+                    ns_id  = st.text_input("類別代號", key=f"ns_id_{p_idx}",
+                                           placeholder="例：dim")
+                with ns2:
+                    ns_lb  = st.text_input("類別名稱", key=f"ns_lb_{p_idx}",
+                                           placeholder="例：尺寸規格檢驗")
+                with ns3:
+                    ns_sub = st.text_input("副標題",   key=f"ns_sub_{p_idx}",
+                                           placeholder="例：量測工具：游標卡尺")
+                if st.button("新增類別", key=f"ns_add_{p_idx}", type="primary"):
+                    if not ns_id.strip() or not ns_lb.strip():
+                        st.warning("代號與名稱不可空白")
+                    else:
+                        new_parts = copy.deepcopy(iqc_parts)
+                        new_parts[p_idx]["sections"].append({
+                            "id": ns_id.strip(),
+                            "label": ns_lb.strip(),
+                            "sublabel": ns_sub.strip(),
+                            "items": [],
+                        })
+                        _iqc_save(new_parts)
+
+            # ── 各 Section ──────────────────────
+            for s_idx, sec in enumerate(p.get("sections", [])):
+                sec_items = sec.get("items", [])
+                with st.expander(
+                    f"  {sec.get('id','')}｜{sec['label']}  ({len(sec_items)} 項)",
+                    expanded=False,
+                ):
+                    # Section 標題編輯
+                    sl1, sl2, sl3, sl4 = st.columns([2, 3, 3, 1])
+                    with sl1:
+                        e_sid = st.text_input("代號", value=sec.get("id",""),
+                                              key=f"e_sid_{p_idx}_{s_idx}")
+                    with sl2:
+                        e_slb = st.text_input("名稱", value=sec["label"],
+                                              key=f"e_slb_{p_idx}_{s_idx}")
+                    with sl3:
+                        e_sub = st.text_input("副標題", value=sec.get("sublabel",""),
+                                              key=f"e_sub_{p_idx}_{s_idx}")
+                    with sl4:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("💾", key=f"s_save_{p_idx}_{s_idx}",
+                                     help="儲存類別標題"):
+                            new_parts = copy.deepcopy(iqc_parts)
+                            new_parts[p_idx]["sections"][s_idx].update({
+                                "id": e_sid.strip() or sec.get("id",""),
+                                "label": e_slb.strip() or sec["label"],
+                                "sublabel": e_sub.strip(),
+                            })
+                            _iqc_save(new_parts)
+
+                    if not sec_items:
+                        if st.button("🗑️ 刪除此空白類別",
+                                     key=f"s_del_{p_idx}_{s_idx}"):
+                            new_parts = copy.deepcopy(iqc_parts)
+                            new_parts[p_idx]["sections"].pop(s_idx)
+                            _iqc_save(new_parts)
+
+                    # 現有項目
+                    for i_idx, item in enumerate(sec_items):
+                        _gc = {"CR": "#c0392b", "MA": "#d68910", "MI": "#1e8449"}.get(
+                            item.get("grade", "MA"), "#888")
+                        st.markdown(
+                            f'<div style="background:#fafbfc;border:1px solid var(--border);'
+                            f'border-left:3px solid {_gc};border-radius:6px;'
+                            f'padding:8px 12px;margin-bottom:4px">'
+                            f'<span style="background:{_gc};color:#fff;padding:1px 7px;'
+                            f'border-radius:4px;font-size:9.5px;font-weight:800;margin-right:8px">'
+                            f'{item.get("grade","MA")}</span>'
+                            f'<b>{item["name"]}</b>  '
+                            f'<span style="color:var(--muted);font-size:11px">{item["spec"]}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                        ic1, ic2, ic3, ic4 = st.columns([3, 4, 1, 1])
+                        with ic1:
+                            e_iname = st.text_input(
+                                "項目名稱", value=item["name"],
+                                key=f"e_iname_{p_idx}_{s_idx}_{i_idx}",
+                                label_visibility="collapsed")
+                        with ic2:
+                            e_ispec = st.text_input(
+                                "規格", value=item["spec"],
+                                key=f"e_ispec_{p_idx}_{s_idx}_{i_idx}",
+                                label_visibility="collapsed")
+                        with ic3:
+                            if st.button("💾", key=f"i_save_{p_idx}_{s_idx}_{i_idx}",
+                                         use_container_width=True):
+                                new_parts = copy.deepcopy(iqc_parts)
+                                new_parts[p_idx]["sections"][s_idx]["items"][i_idx]["name"] = \
+                                    e_iname.strip() or item["name"]
+                                new_parts[p_idx]["sections"][s_idx]["items"][i_idx]["spec"] = \
+                                    e_ispec.strip() or item["spec"]
+                                _iqc_save(new_parts)
+                        with ic4:
+                            if st.button("🗑️", key=f"i_del_{p_idx}_{s_idx}_{i_idx}",
+                                         use_container_width=True):
+                                new_parts = copy.deepcopy(iqc_parts)
+                                new_parts[p_idx]["sections"][s_idx]["items"].pop(i_idx)
+                                _iqc_save(new_parts)
+
+                        # Inputs 管理（量測欄位）
+                        inp_defs = item.get("inputs", [])
+                        if inp_defs:
+                            st.markdown(
+                                '<div style="font-size:10px;color:var(--muted);'
+                                'margin:2px 0 4px 4px">量測欄位：' +
+                                " ｜ ".join(
+                                    f'{ip["label"]}({ip["unit"]})'
+                                    f'{"  " + str(ip.get("min","")) + "~" + str(ip.get("max","")) if ip.get("min") is not None else ""}'
+                                    for ip in inp_defs
+                                ) + '</div>',
+                                unsafe_allow_html=True,
+                            )
+                            # 刪除某個 input
+                            for ip_idx, ip in enumerate(inp_defs):
+                                ipc1, ipc2 = st.columns([8, 1])
+                                with ipc1:
+                                    st.caption(
+                                        f"　key={ip['key']}  label={ip['label']}"
+                                        f"  unit={ip['unit']}"
+                                        f"  min={ip.get('min','-')}  max={ip.get('max','-')}"
+                                    )
+                                with ipc2:
+                                    if st.button("✕", key=f"ip_del_{p_idx}_{s_idx}_{i_idx}_{ip_idx}",
+                                                 help="刪除此量測欄位"):
+                                        new_parts = copy.deepcopy(iqc_parts)
+                                        new_parts[p_idx]["sections"][s_idx]["items"][i_idx]["inputs"].pop(ip_idx)
+                                        _iqc_save(new_parts)
+
+                        # 新增 input
+                        with st.expander(f"  ＋ 新增量測欄位",
+                                         expanded=False):
+                            ip1, ip2, ip3 = st.columns(3)
+                            with ip1:
+                                new_ip_key   = st.text_input(
+                                    "key(英文)",
+                                    key=f"nip_key_{p_idx}_{s_idx}_{i_idx}",
+                                    placeholder="例：d1")
+                                new_ip_label = st.text_input(
+                                    "標籤",
+                                    key=f"nip_lbl_{p_idx}_{s_idx}_{i_idx}",
+                                    placeholder="例：量測值 #1")
+                            with ip2:
+                                new_ip_unit  = st.text_input(
+                                    "單位",
+                                    key=f"nip_unt_{p_idx}_{s_idx}_{i_idx}",
+                                    placeholder="例：mm")
+                                new_ip_min   = st.text_input(
+                                    "最小值(空白=無)",
+                                    key=f"nip_min_{p_idx}_{s_idx}_{i_idx}")
+                            with ip3:
+                                new_ip_max   = st.text_input(
+                                    "最大值(空白=無)",
+                                    key=f"nip_max_{p_idx}_{s_idx}_{i_idx}")
+                                new_ip_af    = st.checkbox(
+                                    "autoFail（超出範圍自動判NG）",
+                                    key=f"nip_af_{p_idx}_{s_idx}_{i_idx}")
+                            if st.button("新增量測欄位",
+                                         key=f"nip_add_{p_idx}_{s_idx}_{i_idx}",
+                                         type="primary"):
+                                k = new_ip_key.strip()
+                                if not k or not new_ip_label.strip():
+                                    st.warning("key 與標籤不可空白")
+                                else:
+                                    new_inp = {
+                                        "key": k, "label": new_ip_label.strip(),
+                                        "unit": new_ip_unit.strip(),
+                                    }
+                                    try:
+                                        if new_ip_min.strip():
+                                            new_inp["min"] = float(new_ip_min)
+                                        if new_ip_max.strip():
+                                            new_inp["max"] = float(new_ip_max)
+                                    except ValueError:
+                                        st.error("最小/最大值請填數字")
+                                        st.stop()
+                                    new_parts = copy.deepcopy(iqc_parts)
+                                    new_parts[p_idx]["sections"][s_idx]["items"][i_idx]["inputs"].append(new_inp)
+                                    if new_ip_af:
+                                        new_parts[p_idx]["sections"][s_idx]["items"][i_idx]["autoFail"] = True
+                                    _iqc_save(new_parts)
+
+                        st.markdown(
+                            "<div style='height:4px'></div>", unsafe_allow_html=True
+                        )
+
+                    # 新增項目表單
+                    st.markdown("---")
+                    st.markdown(
+                        f'<div style="font-size:11px;font-weight:700;'
+                        f'color:var(--blue2);margin-bottom:6px">'
+                        f'➕ 新增項目至「{sec["label"]}」</div>',
+                        unsafe_allow_html=True,
+                    )
+                    ni1, ni2, ni3, ni4 = st.columns([3, 4, 1, 1])
+                    with ni1:
+                        ni_name  = st.text_input(
+                            "項目名稱*",
+                            key=f"ni_name_{p_idx}_{s_idx}", placeholder="例：孔徑尺寸")
+                    with ni2:
+                        ni_spec  = st.text_input(
+                            "規格標準*",
+                            key=f"ni_spec_{p_idx}_{s_idx}", placeholder="例：φ 2.2mm ± 0.05mm")
+                    with ni3:
+                        ni_grade = st.selectbox(
+                            "等級", ["MA", "CR", "MI"],
+                            key=f"ni_grade_{p_idx}_{s_idx}")
+                    with ni4:
+                        ni_af    = st.checkbox(
+                            "autoFail",
+                            key=f"ni_af_{p_idx}_{s_idx}",
+                            help="有量測欄位且超出範圍時自動判 NG")
+                    ni_tool   = st.text_input(
+                        "量測工具",
+                        key=f"ni_tool_{p_idx}_{s_idx}", placeholder="例：游標卡尺")
+                    ni_detail = st.text_input(
+                        "規格補充說明",
+                        key=f"ni_det_{p_idx}_{s_idx}", placeholder="例：允許範圍 2.15~2.25mm")
+                    ni_alert_t= st.text_input(
+                        "項目警示",
+                        key=f"ni_alert_{p_idx}_{s_idx}", placeholder="例：前批病歷說明")
+
+                    if st.button("新增項目", key=f"ni_add_{p_idx}_{s_idx}",
+                                 type="primary"):
+                        if not ni_name.strip() or not ni_spec.strip():
+                            st.warning("項目名稱與規格不可空白")
+                        else:
+                            # 計算新 id（全零件最大 id + 1）
+                            all_existing_ids = [
+                                it["id"]
+                                for s in p.get("sections", [])
+                                for it in s.get("items", [])
+                                if isinstance(it.get("id"), int)
+                            ]
+                            new_id = (max(all_existing_ids) + 1) if all_existing_ids else 1
+                            new_item = {
+                                "id": new_id,
+                                "grade": ni_grade,
+                                "name": ni_name.strip(),
+                                "spec": ni_spec.strip(),
+                                "specDetail": ni_detail.strip(),
+                                "tool": ni_tool.strip(),
+                                "alert": ni_alert_t.strip(),
+                                "autoFail": ni_af,
+                                "inputs": [],
+                            }
+                            new_parts = copy.deepcopy(iqc_parts)
+                            new_parts[p_idx]["sections"][s_idx]["items"].append(new_item)
+                            _iqc_save(new_parts)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+
+# ───────────────────────────────────────────────────
+# TAB 5：登入設定（免登入模式 / 存取控制）
+# ───────────────────────────────────────────────────
+with tab5:
+    st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#fff8e1;border:1px solid #ffe082;
+            border-left:4px solid #f0a500;border-radius:8px;padding:12px 16px">
+  ⚠️ 此頁面設定影響所有使用者的存取方式，請謹慎操作。
+</div>
+""", unsafe_allow_html=True)
+
+    # ── 免登入模式 ──────────────────────────────────
+    st.markdown('<div class="set-label">🔓 免登入模式</div>', unsafe_allow_html=True)
+
+    auto_admin = get_auto_login_admin()
+    is_auto    = bool(auto_admin)
+
+    st.markdown(f"""
+<div style="background:#fff;border:1px solid var(--border);border-radius:8px;
+            padding:16px 18px;margin-bottom:14px;box-shadow:var(--sh)">
+  <div style="font-size:12.5px;color:var(--text);margin-bottom:8px">
+    目前狀態：{"<b style='color:#e74c3c'>⚠️ 免登入模式已開啟</b> — 任何人打開系統都不需要輸入帳號密碼" if is_auto else "<b style='color:#27ae60'>✅ 需要登入</b> — 每位使用者必須輸入帳號與密碼"}
+  </div>
+  {"<div style='font-size:11.5px;color:#e74c3c;background:#fdedec;border:1px solid #f5b7b1;border-radius:6px;padding:8px 12px'>目前自動以 <b>" + auto_admin + "</b> 帳號免登入，所有人均可直接存取全部功能。<br>若系統開放給同事或對外分享，建議立即關閉。</div>" if is_auto else ""}
+</div>
+""", unsafe_allow_html=True)
+
+    col_on, col_off = st.columns(2)
+    with col_on:
+        # 選擇哪個 admin 帳號作為免登入帳號
+        admin_users = [u["username"] for u in get_all_users()
+                       if u["role"] == "admin" and u["status"] == "active"]
+        sel_admin = st.selectbox(
+            "選擇免登入管理員帳號",
+            admin_users,
+            index=admin_users.index(auto_admin) if auto_admin in admin_users else 0,
+            key="auto_login_sel",
+            disabled=(len(admin_users) == 0),
+        )
+        if st.button("🔓 開啟免登入", use_container_width=True,
+                     disabled=(len(admin_users) == 0),
+                     help="開啟後任何人打開系統都不需要登入"):
+            set_auto_login_admin(sel_admin)
+            st.success(f"✅ 已開啟免登入模式（{sel_admin}）")
+            st.rerun()
+
+    with col_off:
+        st.markdown("<br>", unsafe_allow_html=True)
+        if st.button("🔒 關閉免登入（強制登入）", use_container_width=True,
+                     type="primary" if is_auto else "secondary",
+                     help="關閉後所有人必須輸入帳號密碼才能進入系統"):
+            set_auto_login_admin("")
+            st.success("✅ 已關閉免登入，所有使用者需要輸入帳號密碼登入")
+            st.rerun()
+
+    st.markdown("<hr style='border:none;border-top:1px solid var(--border);margin:16px 0'>",
+                unsafe_allow_html=True)
+
+    # ── 說明 ─────────────────────────────────────────
+    st.markdown('<div class="set-label">💡 使用說明</div>', unsafe_allow_html=True)
+    st.markdown("""
+<div style="background:#fff;border:1px solid var(--border);border-radius:8px;
+            padding:16px 18px;box-shadow:var(--sh);font-size:12.5px;
+            color:var(--text);line-height:2">
+  <b>🔒 需要登入模式（建議）</b><br>
+  &nbsp;&nbsp;&nbsp;• 每位使用者必須輸入自己的帳號密碼<br>
+  &nbsp;&nbsp;&nbsp;• 系統會記錄是哪位檢驗員操作<br>
+  &nbsp;&nbsp;&nbsp;• 適合多人共用、對外分享的情況<br>
+  <br>
+  <b>🔓 免登入模式</b><br>
+  &nbsp;&nbsp;&nbsp;• 打開系統即自動以指定管理員帳號登入<br>
+  &nbsp;&nbsp;&nbsp;• 適合只有您一個人使用、不對外分享的情況<br>
+  &nbsp;&nbsp;&nbsp;• 系統初次設定時預設為此模式<br>
+  <br>
+  <b>👥 新增同事帳號</b> → 請前往「<a href="/04_帳號管理" target="_self">帳號管理</a>」頁面
+</div>
+""", unsafe_allow_html=True)
