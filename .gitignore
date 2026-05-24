@@ -1,34 +1,78 @@
-# ── 敏感資料 / 金鑰 ───────────────────────────────
+# ══════════════════════════════════════════════════════
+# REXONTEC 力科品質指揮平台 — .gitignore
+# ══════════════════════════════════════════════════════
+
+# ── 敏感資料 / 金鑰（絕對不上傳）───────────────────
 service_account.json
 *.json.key
 *_credentials.json
 *.pem
 *.p12
-
-# ── Streamlit secrets ────────────────────────────
 .streamlit/secrets.toml
 
-# ── Python cache ─────────────────────────────────
+# ── Python cache ─────────────────────────────────────
 __pycache__/
-*.py[cod]
+*.py[codz]
 *$py.class
 *.pyo
+*.so
 .Python
 
-# ── 虛擬環境 ──────────────────────────────────────
+# ── 虛擬環境 ──────────────────────────────────────────
 venv/
 .venv/
 env/
-.env/
 ENV/
+env.bak/
+venv.bak/
 pythonenv*/
+.pdm-python
+.pdm-build/
+.pixi
+__pypackages__/
 
-# ── 環境變數 ──────────────────────────────────────
+# ── 環境變數 ──────────────────────────────────────────
 .env
 .env.*
 !.env.example
+.envrc
 
-# ── 暫存 / 輸出檔 ─────────────────────────────────
+# ── 打包 / 建置 ───────────────────────────────────────
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.spec
+*.manifest
+
+# ── 測試 / Coverage ────────────────────────────────────
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py.cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# ── 暫存 / 輸出 ────────────────────────────────────────
 _tmp_ids.txt
 *.tmp
 *.log
@@ -37,22 +81,40 @@ _tmp_ids.txt
 *.pdf
 *.xlsx
 *.xls
+tempCodeRunnerFile.py
 
-# ── 系統檔 ───────────────────────────────────────
+# ── 系統 / OS ─────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# ── 啟動批次檔（Windows 限定）────────────────────────
 *.bat
 
-# ── IDE ──────────────────────────────────────────
+# ── IDE ──────────────────────────────────────────────
 .vscode/
 .idea/
 *.code-workspace
+.spyderproject
+.spyproject
+.ropeproject
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+cython_debug/
+.ruff_cache/
+.pypirc
 
-# ── 本地測試 / 開發工具 ───────────────────────────
+# ── Jupyter ───────────────────────────────────────────
+.ipynb_checkpoints
+profile_default/
+ipython_config.py
+
+# ── 本地測試工具 ──────────────────────────────────────
 ngrok*
 *.ngrok*
 
-# ── 圖片快取（若有）──────────────────────────────
-*.cache
-.cache/
+# ── Streamlit Cloud（secrets 已上方排除）─────────────
+# .streamlit/secrets.toml  ← 已在頂部宣告
