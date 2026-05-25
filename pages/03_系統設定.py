@@ -8,6 +8,11 @@ import copy
 from utils.style import QMS_CSS, topbar, page_header
 from utils.inspection_data import get_config, save_config, _DEFAULT_CONFIG
 from utils.iqc_data import get_parts, save_parts
+from utils.ipqc import (
+    load_config as ipqc_load, save_config as ipqc_save,
+    get_models as ipqc_models, delete_model as ipqc_del_model,
+    add_station, delete_station, add_item, delete_item, update_item,
+)
 from utils.auth import (
     require_login, user_info_bar,
     get_auto_login_admin, set_auto_login_admin,
@@ -79,12 +84,13 @@ def _save_and_rerun(new_cfg: dict):
 # ═══════════════════════════════════════════════════
 # Tab 切換
 # ═══════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "⚙️ 基本設定",
     "⚡ 電調 ESC 檢驗項目",
     "🔧 馬達 Motor 檢驗項目",
     "🔬 IQC 零件庫",
     "🔐 登入設定",
+    "📋 IPQC 巡檢設定",
 ])
 
 # ───────────────────────────────────────────────────
@@ -901,3 +907,305 @@ with tab5:
   <b>👥 新增同事帳號</b> → 請前往「<a href="/04_帳號管理" target="_self">帳號管理</a>」頁面
 </div>
 """, unsafe_allow_html=True)
+
+
+# ───────────────────────────────────────────────────
+# TAB 6：IPQC 巡檢設定
+# ───────────────────────────────────────────────────
+with tab6:
+    st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#f7f9fc;border:1px solid var(--border);
+            border-left:4px solid var(--accent);border-radius:6px;padding:10px 14px">
+  管理 IPQC 製程巡檢機種：新增機種、設定巡檢工序與檢查項目、設定首台FAI確認項目。
+  完成後可至「📋 IPQC 巡檢」頁面填寫表單並生成PDF。
+</div>
+""", unsafe_allow_html=True)
+
+    ipqc_cfg = ipqc_load()
+    ipqc_model_list = ipqc_cfg.get("models", [])
+
+    def _ipqc_save_rerun(new_cfg):
+        ipqc_save(new_cfg)
+        st.rerun()
+
+    # ── 新增機種 ─────────────────────────────────────
+    with st.expander("➕ 新增巡檢機種", expanded=False):
+        nc1, nc2, nc3, nc4 = st.columns([2, 2, 2, 2])
+        with nc1:
+            new_mid   = st.text_input("機種ID*（英數字底線）", key="ni_mid",
+                                      placeholder="例：PJ3_UHF")
+        with nc2:
+            new_mname = st.text_input("機種名稱*", key="ni_mname",
+                                      placeholder="例：PJ3 UHF")
+        with nc3:
+            new_docno = st.text_input("文件編號", key="ni_docno",
+                                      placeholder="例：PJ3-QC-PR3005")
+        with nc4:
+            new_freq  = st.text_input("巡查頻率", key="ni_freq",
+                                      value="每4小時巡查1次")
+        nv1, nv2 = st.columns(2)
+        with nv1:
+            new_ver  = st.text_input("版本", key="ni_ver", value="V1.0")
+        with nv2:
+            new_rel  = st.text_input("版次日期", key="ni_rel", placeholder="例：2026/05/13")
+        if st.button("✅ 新增機種", key="ni_add_model", type="primary"):
+            mid = new_mid.strip().upper().replace(" ", "_")
+            if not mid or not new_mname.strip():
+                st.warning("機種ID 與名稱不可空白")
+            elif any(m["id"] == mid for m in ipqc_model_list):
+                st.warning(f"機種ID「{mid}」已存在")
+            else:
+                new_cfg = copy.deepcopy(ipqc_cfg)
+                new_cfg["models"].append({
+                    "id": mid,
+                    "name": new_mname.strip(),
+                    "doc_no": new_docno.strip(),
+                    "version": new_ver.strip() or "V1.0",
+                    "released": new_rel.strip(),
+                    "inspection_freq": new_freq.strip() or "每4小時巡查1次",
+                    "patrol_stations": [],
+                    "fai_stations": [],
+                })
+                _ipqc_save_rerun(new_cfg)
+
+    # ── 複製機種 ───────────────────────────────────────
+    if ipqc_model_list:
+        with st.expander("🔁 複製現有機種（快速建立新機種）", expanded=False):
+            copy_opts = {f"{m['name']} ({m['id']})": i for i, m in enumerate(ipqc_model_list)}
+            cp1, cp2 = st.columns([5, 1])
+            with cp1:
+                cp_sel = st.selectbox("選擇來源機種", list(copy_opts.keys()),
+                                      key="ipqc_copy_sel", label_visibility="collapsed")
+            with cp2:
+                if st.button("🔁 複製", use_container_width=True, key="ipqc_do_copy"):
+                    src = copy.deepcopy(ipqc_model_list[copy_opts[cp_sel]])
+                    base = src["id"]
+                    existing = {m["id"] for m in ipqc_model_list}
+                    suffix = "-COPY"; n2 = 2
+                    while (base + suffix) in existing:
+                        suffix = f"-COPY{n2}"; n2 += 1
+                    src["id"]   = base + suffix
+                    src["name"] = "（複製）" + src["name"]
+                    new_cfg = copy.deepcopy(ipqc_cfg)
+                    new_cfg["models"].append(src)
+                    _ipqc_save_rerun(new_cfg)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    # ── 各機種管理 ────────────────────────────────────
+    GRADE_OPTIONS = ["CR", "MA", "MI"]
+
+    for m_idx, mdl in enumerate(ipqc_model_list):
+        mid   = mdl["id"]
+        mname = mdl["name"]
+
+        with st.expander(f"**{mname}**　({mid})  ·  {mdl.get('doc_no','')}  {mdl.get('version','')}",
+                         expanded=False):
+
+            # ── 基本資料 ────────────────────────────
+            st.markdown('<div style="font-size:11.5px;font-weight:700;color:var(--blue2);'
+                        'margin-bottom:8px">基本資料</div>', unsafe_allow_html=True)
+            bi1, bi2, bi3 = st.columns(3)
+            with bi1:
+                e_name = st.text_input("機種名稱", value=mname,   key=f"ipqc_name_{m_idx}")
+                e_doc  = st.text_input("文件編號", value=mdl.get("doc_no",""), key=f"ipqc_doc_{m_idx}")
+            with bi2:
+                e_ver  = st.text_input("版本",     value=mdl.get("version",""),  key=f"ipqc_ver_{m_idx}")
+                e_rel  = st.text_input("版次日期", value=mdl.get("released",""), key=f"ipqc_rel_{m_idx}")
+            with bi3:
+                e_freq = st.text_input("巡查頻率", value=mdl.get("inspection_freq",""), key=f"ipqc_freq_{m_idx}")
+            bic1, bic2 = st.columns([3, 1])
+            with bic1:
+                if st.button("💾 儲存基本資料", key=f"ipqc_save_meta_{m_idx}"):
+                    new_cfg = copy.deepcopy(ipqc_cfg)
+                    new_cfg["models"][m_idx].update({
+                        "name": e_name.strip() or mname,
+                        "doc_no": e_doc.strip(),
+                        "version": e_ver.strip(),
+                        "released": e_rel.strip(),
+                        "inspection_freq": e_freq.strip(),
+                    })
+                    _ipqc_save_rerun(new_cfg)
+            with bic2:
+                if st.button("🗑️ 刪除機種", key=f"ipqc_del_{m_idx}",
+                             help="刪除此機種（含所有工序與項目，無法復原）"):
+                    new_cfg = copy.deepcopy(ipqc_cfg)
+                    new_cfg["models"].pop(m_idx)
+                    _ipqc_save_rerun(new_cfg)
+
+            st.markdown("<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>",
+                        unsafe_allow_html=True)
+
+            # ── 巡檢工序管理 ────────────────────────
+            for stype, stype_label, stype_icon in [
+                ("patrol_stations", "製程巡檢工序", "📋"),
+                ("fai_stations",    "首台FAI確認工序", "🔬"),
+            ]:
+                stations = mdl.get(stype, [])
+                st.markdown(
+                    f'<div style="font-size:12px;font-weight:700;color:var(--navy);'
+                    f'margin:12px 0 8px">{stype_icon} {stype_label}（{len(stations)} 個工序）</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # 新增工序
+                with st.expander(f"➕ 新增 {stype_label} 工序", expanded=False):
+                    as1, as2 = st.columns(2)
+                    with as1:
+                        ns_id   = st.text_input("工序ID*", key=f"ns_id_{m_idx}_{stype}",
+                                                placeholder="例：ST-12")
+                    with as2:
+                        ns_name = st.text_input("工序名稱*", key=f"ns_nm_{m_idx}_{stype}",
+                                                placeholder="例：總裝")
+                    if st.button("新增工序", key=f"ns_add_{m_idx}_{stype}", type="primary"):
+                        sid = ns_id.strip()
+                        if not sid or not ns_name.strip():
+                            st.warning("工序ID 與名稱不可空白")
+                        elif any(s["id"] == sid for s in stations):
+                            st.warning(f"工序「{sid}」已存在")
+                        else:
+                            new_cfg = copy.deepcopy(ipqc_cfg)
+                            new_item_template = {"item": "", "grade": "MA"} if stype == "patrol_stations" \
+                                                else {"item": "", "criteria": ""}
+                            new_cfg["models"][m_idx][stype].append({
+                                "id": sid, "name": ns_name.strip(), "items": []
+                            })
+                            _ipqc_save_rerun(new_cfg)
+
+                # 各工序展開
+                for s_idx, station in enumerate(stations):
+                    s_id   = station["id"]
+                    s_name = station["name"]
+                    s_items = station.get("items", [])
+
+                    with st.expander(
+                        f"  {s_id}｜{s_name}  ({len(s_items)} 項)",
+                        expanded=False,
+                    ):
+                        # 工序標題編輯
+                        sh1, sh2, sh3 = st.columns([2, 3, 1])
+                        with sh1:
+                            e_sid  = st.text_input("工序ID", value=s_id,
+                                                   key=f"e_sid_{m_idx}_{stype}_{s_idx}")
+                        with sh2:
+                            e_snm  = st.text_input("工序名稱", value=s_name,
+                                                   key=f"e_snm_{m_idx}_{stype}_{s_idx}")
+                        with sh3:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("💾", key=f"s_sv_{m_idx}_{stype}_{s_idx}",
+                                         help="儲存工序標題"):
+                                new_cfg = copy.deepcopy(ipqc_cfg)
+                                new_cfg["models"][m_idx][stype][s_idx].update({
+                                    "id": e_sid.strip() or s_id,
+                                    "name": e_snm.strip() or s_name,
+                                })
+                                _ipqc_save_rerun(new_cfg)
+
+                        if not s_items:
+                            if st.button("🗑️ 刪除此空白工序",
+                                         key=f"s_del_{m_idx}_{stype}_{s_idx}"):
+                                new_cfg = copy.deepcopy(ipqc_cfg)
+                                new_cfg["models"][m_idx][stype].pop(s_idx)
+                                _ipqc_save_rerun(new_cfg)
+
+                        # 現有項目
+                        for i_idx, item in enumerate(s_items):
+                            gc = {"CR": "#c0392b", "MA": "#d68910", "MI": "#1e8449"}.get(
+                                item.get("grade", "MA"), "#888")
+                            grade_badge = (
+                                f'<span style="background:{gc};color:#fff;padding:1px 7px;'
+                                f'border-radius:4px;font-size:9.5px;font-weight:800;margin-right:8px">'
+                                f'{item.get("grade","─")}</span>'
+                            ) if stype == "patrol_stations" else ""
+                            st.markdown(
+                                f'<div style="background:#fafbfc;border:1px solid var(--border);'
+                                f'border-radius:6px;padding:7px 12px;margin-bottom:4px">'
+                                f'{grade_badge}<b>{item["item"]}</b>'
+                                + (f'  <span style="color:var(--muted);font-size:11px">{item.get("criteria","")}</span>'
+                                   if stype == "fai_stations" else "")
+                                + '</div>',
+                                unsafe_allow_html=True,
+                            )
+                            ic1, ic2, ic3, ic4 = st.columns([3, 3, 1, 1])
+                            with ic1:
+                                e_item = st.text_input(
+                                    "檢查項目", value=item["item"],
+                                    key=f"e_itm_{m_idx}_{stype}_{s_idx}_{i_idx}",
+                                    label_visibility="collapsed")
+                            with ic2:
+                                if stype == "patrol_stations":
+                                    e_grade = st.selectbox(
+                                        "等級", GRADE_OPTIONS,
+                                        index=GRADE_OPTIONS.index(item.get("grade","MA")),
+                                        key=f"e_grd_{m_idx}_{stype}_{s_idx}_{i_idx}",
+                                        label_visibility="collapsed")
+                                else:
+                                    e_crit = st.text_input(
+                                        "判定基準", value=item.get("criteria",""),
+                                        key=f"e_crt_{m_idx}_{stype}_{s_idx}_{i_idx}",
+                                        label_visibility="collapsed")
+                            with ic3:
+                                if st.button("💾", key=f"i_sv_{m_idx}_{stype}_{s_idx}_{i_idx}",
+                                             use_container_width=True):
+                                    new_cfg = copy.deepcopy(ipqc_cfg)
+                                    tgt = new_cfg["models"][m_idx][stype][s_idx]["items"][i_idx]
+                                    tgt["item"] = e_item.strip() or item["item"]
+                                    if stype == "patrol_stations":
+                                        tgt["grade"] = e_grade
+                                    else:
+                                        tgt["criteria"] = e_crit.strip()
+                                    _ipqc_save_rerun(new_cfg)
+                            with ic4:
+                                if st.button("🗑️", key=f"i_dl_{m_idx}_{stype}_{s_idx}_{i_idx}",
+                                             use_container_width=True):
+                                    new_cfg = copy.deepcopy(ipqc_cfg)
+                                    new_cfg["models"][m_idx][stype][s_idx]["items"].pop(i_idx)
+                                    _ipqc_save_rerun(new_cfg)
+
+                        # 新增項目
+                        st.markdown("---")
+                        st.markdown(
+                            f'<div style="font-size:11px;font-weight:700;color:var(--blue2);'
+                            f'margin-bottom:6px">➕ 新增項目至 {s_id}｜{s_name}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        na1, na2, na3 = st.columns([4, 2, 1])
+                        with na1:
+                            ni_item = st.text_input(
+                                "檢查項目*", key=f"ni_itm_{m_idx}_{stype}_{s_idx}",
+                                placeholder="例：確認零件外觀無損傷")
+                        with na2:
+                            if stype == "patrol_stations":
+                                ni_grade = st.selectbox(
+                                    "等級", GRADE_OPTIONS,
+                                    key=f"ni_grd_{m_idx}_{stype}_{s_idx}")
+                            else:
+                                ni_crit = st.text_input(
+                                    "判定基準", key=f"ni_crt_{m_idx}_{stype}_{s_idx}",
+                                    placeholder="例：無裂痕、無毛邊")
+                        with na3:
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            if st.button("＋", key=f"ni_add_{m_idx}_{stype}_{s_idx}",
+                                         use_container_width=True, type="primary"):
+                                if not ni_item.strip():
+                                    st.warning("請填入檢查項目")
+                                else:
+                                    new_cfg = copy.deepcopy(ipqc_cfg)
+                                    if stype == "patrol_stations":
+                                        new_cfg["models"][m_idx][stype][s_idx]["items"].append(
+                                            {"item": ni_item.strip(), "grade": ni_grade}
+                                        )
+                                    else:
+                                        new_cfg["models"][m_idx][stype][s_idx]["items"].append(
+                                            {"item": ni_item.strip(),
+                                             "criteria": ni_crit.strip() if 'ni_crit' in dir() else ""}
+                                        )
+                                    _ipqc_save_rerun(new_cfg)
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+            # ── 快速跳轉 ────────────────────────────────
+            if st.button(f"📋 前往填寫 {mname} 巡檢表",
+                         key=f"goto_ipqc_{m_idx}", use_container_width=True):
+                st.switch_page("pages/20_📋_IPQC巡檢.py")
