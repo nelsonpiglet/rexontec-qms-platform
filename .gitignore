@@ -5,6 +5,7 @@
 # ── 敏感資料 / 金鑰（絕對不上傳）───────────────────
 service_account.json
 *service_account*.json
+*service_account*.txt
 project-*.json
 *.json.key
 *_credentials.json
@@ -12,6 +13,15 @@ project-*.json
 *.pem
 *.p12
 .streamlit/secrets.toml
+
+# ── 工具腳本（含金鑰轉換邏輯）───────────────────────
+toml_convert.py
+
+# ── Office 暫存檔 ──────────────────────────────────
+~$*
+*.docx
+*.pptx
+*.xlsx~
 
 # ── Python cache ─────────────────────────────────────
 __pycache__/
