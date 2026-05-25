@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 
 from utils.style  import QMS_CSS, topbar, page_header
 from utils.auth   import require_login, user_info_bar
-from utils.gsheet import load_oqc_records, load_iqc_records
+from utils.gsheet import load_oqc_records, load_iqc_records, load_ipqc_records
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 追蹤查詢",
@@ -39,7 +39,7 @@ with c6:
 
 st.markdown(page_header(
     "追蹤查詢",
-    "OQC 出廠檢驗 & IQC 進料品質 — 批號 / 序號 / 品號 / 採購單 / 日期",
+    "OQC 出廠檢驗 & IQC 進料品質 & IPQC 製程巡檢 — 批號 / 序號 / 日期 / 巡查員",
     "TRK",
 ), unsafe_allow_html=True)
 
@@ -58,6 +58,19 @@ def _load_oqc() -> pd.DataFrame:
         return df
     except Exception as ex:
         st.warning(f"⚠️ 無法載入 OQC 資料：{ex}")
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=300, show_spinner="載入 IPQC 資料中…")
+def _load_ipqc() -> pd.DataFrame:
+    try:
+        df = load_ipqc_records()
+        if not df.empty:
+            df["建立時間"] = pd.to_datetime(df["建立時間"], errors="coerce")
+            df = df.sort_values("建立時間", ascending=False).reset_index(drop=True)
+        return df
+    except Exception as ex:
+        st.warning(f"⚠️ 無法載入 IPQC 資料：{ex}")
         return pd.DataFrame()
 
 
@@ -274,7 +287,7 @@ def _render_iqc_record(row, expanded=False):
 # ════════════════════════════════════════════════════════
 # 主頁面：兩大分類 Tab
 # ════════════════════════════════════════════════════════
-tab_oqc, tab_iqc = st.tabs(["📦 出廠檢驗追蹤 (OQC)", "🔬 IQC 進料追蹤"])
+tab_oqc, tab_iqc, tab_ipqc = st.tabs(["📦 出廠檢驗追蹤 (OQC)", "🔬 IQC 進料追蹤", "📋 IPQC 製程巡檢追蹤"])
 
 # ─────────────────────────────────────────────────────────
 # ██  OQC TAB
@@ -613,6 +626,139 @@ with tab_iqc:
             for _, row in filtered_iqc.iterrows():
                 _render_iqc_record(row)
         elif total_iqc > 50:
+            st.caption("🔍 篩選結果超過 50 筆，請縮小查詢範圍以展開明細。")
+        else:
+            st.info("ℹ️ 無符合條件的記錄，請調整查詢條件。")
+
+
+# ─────────────────────────────────────────────────────────
+# ██  IPQC TAB  — 依機種 / 日期 / 巡查員 / 類型查詢
+# ─────────────────────────────────────────────────────────
+with tab_ipqc:
+    df_ipqc = _load_ipqc()
+
+    if df_ipqc.empty:
+        st.info("ℹ️ 尚無 IPQC 記錄，請先完成至少一筆巡檢並點「💾 提交記錄至雲端」。")
+    else:
+        st.markdown("#### 🔍 IPQC 製程巡檢查詢")
+        st.markdown("""
+<div style="background:#fff;border:1px solid #dce3ec;border-left:4px solid #e67e22;
+            border-radius:8px;padding:14px 18px;margin-bottom:14px;box-shadow:0 2px 8px rgba(13,27,42,.08)">
+  <div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:10px">🔎 查詢條件</div>
+""", unsafe_allow_html=True)
+
+        ip1, ip2, ip3, ip4 = st.columns(4)
+        with ip1:
+            model_opts_ip = ["全部"] + sorted(
+                [str(x) for x in df_ipqc["機種名稱"].dropna().unique()
+                 if str(x).strip() not in ("", "nan")]
+            )
+            ip_model_f = st.selectbox("機種", model_opts_ip, key="ip_f_model")
+        with ip2:
+            type_opts = ["全部", "巡檢", "首台FAI"]
+            ip_type_f = st.selectbox("巡檢類型", type_opts, key="ip_f_type")
+        with ip3:
+            ip_insp_kw = st.text_input("巡查員", key="ip_f_insp", placeholder="輸入巡查員姓名…")
+        with ip4:
+            ip_mfg_kw = st.text_input("製造編號", key="ip_f_mfg", placeholder="輸入製造編號…")
+
+        ip5, ip6, ip7 = st.columns(3)
+        with ip5:
+            ip_date_from = st.date_input("日期（起）", value=None,
+                                          key="ip_f_df", format="YYYY/MM/DD")
+        with ip6:
+            ip_date_to = st.date_input("日期（迄）", value=None,
+                                        key="ip_f_dt", format="YYYY/MM/DD")
+        with ip7:
+            v_opts_ip = ["全部", "OK", "NG"]
+            ip_v_f = st.selectbox("判定結果", v_opts_ip, key="ip_f_v")
+
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # 套用篩選
+        filtered_ip = df_ipqc.copy()
+        if ip_model_f != "全部":
+            filtered_ip = filtered_ip[filtered_ip["機種名稱"] == ip_model_f]
+        if ip_type_f != "全部":
+            filtered_ip = filtered_ip[filtered_ip["巡檢類型"] == ip_type_f]
+        if ip_insp_kw.strip():
+            filtered_ip = filtered_ip[
+                filtered_ip["巡查員"].astype(str).str.contains(ip_insp_kw.strip(), case=False, na=False)]
+        if ip_mfg_kw.strip():
+            filtered_ip = filtered_ip[
+                filtered_ip["製造編號"].astype(str).str.contains(ip_mfg_kw.strip(), case=False, na=False)]
+        if ip_date_from:
+            filtered_ip = filtered_ip[filtered_ip["建立時間"].dt.date >= ip_date_from]
+        if ip_date_to:
+            filtered_ip = filtered_ip[filtered_ip["建立時間"].dt.date <= ip_date_to]
+        if ip_v_f != "全部":
+            filtered_ip = filtered_ip[filtered_ip["總判定"] == ip_v_f]
+
+        # 統計摘要
+        total_ip  = len(filtered_ip)
+        ng_ip     = (filtered_ip["總判定"] == "NG").sum()
+        ok_ip     = total_ip - ng_ip
+        cr_ip     = pd.to_numeric(filtered_ip.get("CR_NG數", 0), errors="coerce").fillna(0).astype(int).sum()
+        ma_ip     = pd.to_numeric(filtered_ip.get("MA_NG數", 0), errors="coerce").fillna(0).astype(int).sum()
+        mi_ip     = pd.to_numeric(filtered_ip.get("MI_NG數", 0), errors="coerce").fillna(0).astype(int).sum()
+        _stat_cards(total_ip, ok_ip, ng_ip, cr_ip, ma_ip, mi_ip, f"{total_ip} 筆")
+
+        # 清單
+        ip_show_cols = [c for c in [
+            "記錄編號", "建立時間", "機種名稱", "製造編號", "日期",
+            "本批數量", "不良件數", "不良率", "巡查員",
+            "巡檢類型", "總判定", "NG工序數", "CR_NG數", "MA_NG數", "MI_NG數",
+            "NG_工序摘要",
+        ] if c in filtered_ip.columns]
+
+        disp_ip = filtered_ip[ip_show_cols].copy()
+        if "建立時間" in disp_ip.columns:
+            disp_ip["建立時間"] = disp_ip["建立時間"].dt.strftime("%Y/%m/%d %H:%M")
+
+        st.caption(f"共 {total_ip} 筆")
+        st.dataframe(disp_ip, use_container_width=True, hide_index=True,
+                     height=min(500, 56 + len(disp_ip) * 38))
+
+        csv_ip = disp_ip.to_csv(index=False, encoding="utf-8-sig")
+        st.download_button(
+            "⬇️ 匯出 CSV",
+            data=csv_ip.encode("utf-8-sig"),
+            file_name=f"IPQC_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+            mime="text/csv",
+        )
+
+        # 明細展開
+        if 0 < total_ip <= 50:
+            st.markdown("---")
+            st.markdown("##### 點擊展開各筆明細")
+            for _, row in filtered_ip.iterrows():
+                date_str = row["建立時間"].strftime("%Y/%m/%d %H:%M") if pd.notna(row["建立時間"]) else "─"
+                vcolor   = "#e74c3c" if str(row.get("總判定")) == "NG" else "#27ae60"
+                with st.expander(
+                    f"📋 {row['記錄編號']}　{date_str}　{row.get('機種名稱','─')}　"
+                    f"{row.get('巡檢類型','─')}　判定：{row.get('總判定','─')}",
+                ):
+                    r1, r2, r3, r4, r5 = st.columns(5)
+                    r1.metric("機種",   str(row.get("機種名稱", "─")))
+                    r2.metric("製造編號", str(row.get("製造編號", "─")))
+                    r3.metric("巡查員", str(row.get("巡查員", "─")))
+                    r4.metric("巡檢類型", str(row.get("巡檢類型", "─")))
+                    r5.metric("不良率",  str(row.get("不良率", "─")))
+
+                    ng_txt = str(row.get("NG_工序摘要", ""))
+                    if ng_txt and ng_txt not in ("", "nan"):
+                        st.markdown(f"""
+<div style="background:#fff8f7;border:1px solid #f5b7b1;border-radius:6px;
+            padding:10px 14px;font-size:12px;margin-top:8px">
+  <b style="color:#c0392b">NG 工序摘要：</b>{ng_txt}
+</div>""", unsafe_allow_html=True)
+
+                    r6, r7, r8 = st.columns(3)
+                    r6.metric("CR NG", str(row.get("CR_NG數", 0)))
+                    r7.metric("MA NG", str(row.get("MA_NG數", 0)))
+                    r8.metric("MI NG", str(row.get("MI_NG數", 0)))
+
+        elif total_ip > 50:
             st.caption("🔍 篩選結果超過 50 筆，請縮小查詢範圍以展開明細。")
         else:
             st.info("ℹ️ 無符合條件的記錄，請調整查詢條件。")

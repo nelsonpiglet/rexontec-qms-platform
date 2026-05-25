@@ -21,6 +21,7 @@ SCOPES = [
 SHEET_ESC   = "OQC_電調"
 SHEET_MOTOR = "OQC_馬達"
 SHEET_IQC   = "IQC"
+SHEET_IPQC  = "IPQC"
 
 # ─────────────────────────────────────────────────────
 # 各表的欄位定義
@@ -306,6 +307,119 @@ def load_iqc_records():
         return pd.DataFrame(records) if records else pd.DataFrame(columns=COLS_IQC)
     except Exception:
         return pd.DataFrame(columns=COLS_IQC)
+
+
+COLS_IPQC = [
+    "記錄編號",     # A
+    "建立時間",     # B
+    "機種ID",       # C
+    "機種名稱",     # D
+    "日期",         # E
+    "製造編號",     # F
+    "本批數量",     # G
+    "檢查件數",     # H
+    "不良件數",     # I
+    "不良率",       # J
+    "巡查員",       # K
+    "巡檢類型",     # L  巡檢 / 首台FAI
+    "總判定",       # M  OK / NG
+    "NG工序數",     # N
+    "CR_NG數",      # O
+    "MA_NG數",      # P
+    "MI_NG數",      # Q
+    "NG_工序摘要",  # R
+    "製造確認",     # S
+    "品保確認",     # T
+    "主管審核",     # U
+    "明細JSON",     # V
+]
+
+
+def append_ipqc_record(header: dict, model: dict,
+                       record_type: str, results: dict) -> str:
+    """
+    儲存一筆 IPQC 巡檢或首台FAI 記錄。
+
+    header      : {model_id, model_name, date, mfg_no, batch_qty, inspect_qty,
+                   defect_qty, defect_rate, inspector, mfg_sig, qc_sig, mgr_sig}
+    model       : 完整 IPQC model dict（取站別 / 項目 / 等級）
+    record_type : "patrol" | "fai"
+    results     : patrol → {st_id: {"0": {am, pm, note, action}, ...}}
+                  fai    → {st_id: {"0": {result, measure, note}, ...}}
+    回傳: 記錄編號
+    """
+    ws = _open_sheet(SHEET_IPQC, COLS_IPQC)
+    _ensure_headers(ws, COLS_IPQC)
+
+    total   = len(ws.get_all_values())
+    year    = datetime.now().year
+    pfx     = "IPQC-P" if record_type == "patrol" else "IPQC-F"
+    rec_id  = f"{pfx}-{year}-{str(total).zfill(4)}"
+    now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+
+    cr_ng = ma_ng = mi_ng = 0
+    ng_stations: set = set()
+    ng_summaries: list = []
+
+    if record_type == "patrol":
+        for station in model.get("patrol_stations", []):
+            st_id   = station["id"]
+            st_name = station["name"]
+            st_ng   = []
+            for i_idx, it in enumerate(station.get("items", [])):
+                grade = it.get("grade", "MA")
+                d     = results.get(st_id, {}).get(str(i_idx), {})
+                if d.get("am") == "NG" or d.get("pm") == "NG":
+                    if grade == "CR":   cr_ng += 1
+                    elif grade == "MA": ma_ng += 1
+                    else:               mi_ng += 1
+                    ng_stations.add(st_id)
+                    st_ng.append(f"[{grade}]{it['item'][:12]}")
+            if st_ng:
+                ng_summaries.append(f"{st_id}/{st_name}：{'；'.join(st_ng)}")
+    else:  # fai
+        for station in model.get("fai_stations", []):
+            st_id   = station["id"]
+            st_name = station["name"]
+            st_ng   = []
+            for i_idx, it in enumerate(station.get("items", [])):
+                d = results.get(st_id, {}).get(str(i_idx), {})
+                if d.get("result") == "×":
+                    mi_ng += 1
+                    ng_stations.add(st_id)
+                    st_ng.append(it["item"][:12])
+            if st_ng:
+                ng_summaries.append(f"{st_id}/{st_name}：{'；'.join(st_ng)}")
+
+    verdict    = "NG" if (cr_ng + ma_ng + mi_ng) > 0 else "OK"
+    ng_summary = " | ".join(ng_summaries)
+
+    row = [
+        rec_id,  now_str,
+        header.get("model_id",   ""),   header.get("model_name", ""),
+        header.get("date",       ""),   header.get("mfg_no",     ""),
+        header.get("batch_qty",  0),    header.get("inspect_qty", 0),
+        header.get("defect_qty", 0),    header.get("defect_rate", ""),
+        header.get("inspector",  ""),
+        "巡檢" if record_type == "patrol" else "首台FAI",
+        verdict, len(ng_stations), cr_ng, ma_ng, mi_ng,
+        ng_summary,
+        header.get("mfg_sig", ""), header.get("qc_sig", ""), header.get("mgr_sig", ""),
+        json.dumps(results, ensure_ascii=False),
+    ]
+    ws.append_row(row, value_input_option="USER_ENTERED")
+    return rec_id
+
+
+def load_ipqc_records():
+    """讀取所有 IPQC 記錄，回傳 DataFrame"""
+    import pandas as pd
+    try:
+        ws      = _open_sheet(SHEET_IPQC, COLS_IPQC)
+        records = ws.get_all_records()
+        return pd.DataFrame(records) if records else pd.DataFrame(columns=COLS_IPQC)
+    except Exception:
+        return pd.DataFrame(columns=COLS_IPQC)
 
 
 # ─────────────────────────────────────────────────────
