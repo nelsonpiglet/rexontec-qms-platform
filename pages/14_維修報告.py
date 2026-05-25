@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime
 from utils.rma_gsheet    import load_all_cases
-from utils.style         import QMS_CSS, topbar, page_header, STATUS_EMOJI
+from utils.style         import QMS_CSS, topbar, page_header, STATUS_EMOJI, gsheet_error_banner
 from utils.rma_pdf_report import generate_repair_pdf
 
 st.set_page_config(
@@ -66,7 +66,10 @@ with btn_col:
     if st.button("🔄", use_container_width=True, help="重新整理"):
         st.cache_data.clear(); st.rerun()
 
-df = get_data()
+try:
+    df = get_data()
+except Exception as _e:
+    gsheet_error_banner(_e)
 if df.empty:
     st.info("目前沒有任何維修案件。")
     st.stop()

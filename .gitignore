@@ -4,8 +4,11 @@
 
 # ── 敏感資料 / 金鑰（絕對不上傳）───────────────────
 service_account.json
+*service_account*.json
+project-*.json
 *.json.key
 *_credentials.json
+*_serviceaccount*.json
 *.pem
 *.p12
 .streamlit/secrets.toml

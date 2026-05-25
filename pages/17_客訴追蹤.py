@@ -9,7 +9,7 @@ from utils.cs_gsheet import (
     load_all_complaints, update_cs_status, get_complaint_by_id,
     CS_STATUS_LIST, DONE_STATUS, OVERDUE_DAYS,
 )
-from utils.style import QMS_CSS, topbar, page_header
+from utils.style import QMS_CSS, topbar, page_header, gsheet_error_banner
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 客訴追蹤",
@@ -167,7 +167,10 @@ with btn_col:
     if st.button("🔄", use_container_width=True, help="重新整理"):
         st.cache_data.clear(); st.rerun()
 
-df = get_data()
+try:
+    df = get_data()
+except Exception as _e:
+    gsheet_error_banner(_e)
 
 if df.empty:
     st.info("📭 目前尚無客訴案件，請先於【客訴輸入】建立案件。")

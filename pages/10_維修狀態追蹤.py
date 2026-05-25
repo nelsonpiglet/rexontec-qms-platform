@@ -6,7 +6,7 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from utils.rma_gsheet       import load_all_cases, update_status, get_photos, delete_case
-from utils.style             import QMS_CSS, topbar, page_header, stat_cards, status_badge, STATUS_EMOJI
+from utils.style             import QMS_CSS, topbar, page_header, stat_cards, status_badge, STATUS_EMOJI, gsheet_error_banner
 from utils.rma_email_notify  import notify_case_closed
 
 st.set_page_config(
@@ -72,7 +72,10 @@ with col_r2:
     if st.button("🔄 重新整理", use_container_width=True):
         st.cache_data.clear(); st.rerun()
 
-df = get_data()
+try:
+    df = get_data()
+except Exception as _e:
+    gsheet_error_banner(_e)
 if df.empty:
     st.info("目前沒有任何維修案件，請先到「維修案件輸入」頁面新增案件。")
     st.stop()

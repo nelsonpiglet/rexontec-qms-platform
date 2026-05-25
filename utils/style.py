@@ -276,6 +276,27 @@ def page_header(title: str, subtitle: str, watermark: str = "OQC") -> str:
 """
 
 
+def gsheet_error_banner(err: Exception = None):
+    """Streamlit Cloud 上 Google Sheets 連線失敗時顯示的友善錯誤畫面"""
+    import streamlit as st
+    st.error("⚠️ Google Sheets 連線失敗，無法載入資料。")
+    st.markdown("""
+<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;
+            padding:16px 20px;margin:8px 0;font-size:13px;line-height:1.8">
+  <div style="font-weight:700;color:#e65100;margin-bottom:8px">🔧 Streamlit Cloud 設定方式</div>
+  <ol style="margin:0;padding-left:20px">
+    <li>右下角 <b>Manage app</b> → <b>Settings</b> → <b>Secrets</b></li>
+    <li>貼入 <code>[gcp_service_account]</code> 的完整 TOML 內容</li>
+    <li>確認 <code>private_key</code> 值用雙引號 <code>"..."</code>，換行符為 <code>\\n</code>（非真正換行）</li>
+    <li>點 <b>Save</b> — App 自動重啟即可連線</li>
+  </ol>
+</div>
+""", unsafe_allow_html=True)
+    if err is not None:
+        st.caption(f"錯誤類型：{type(err).__name__}")
+    st.stop()
+
+
 def render_navbar(current: str = ""):
     import streamlit as st
     pages = [

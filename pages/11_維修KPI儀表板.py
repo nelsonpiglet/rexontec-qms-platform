@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
 from utils.rma_gsheet import load_all_cases
-from utils.style      import QMS_CSS, topbar, page_header
+from utils.style      import QMS_CSS, topbar, page_header, gsheet_error_banner
 
 st.set_page_config(
     page_title="REXONTEC 力科 | KPI 儀表板",
@@ -114,7 +114,10 @@ with col_btn:
     if st.button("🔄", use_container_width=True, help="重新整理"):
         st.cache_data.clear(); st.rerun()
 
-df = get_data()
+try:
+    df = get_data()
+except Exception as _e:
+    gsheet_error_banner(_e)
 
 
 def parse_month(s):
