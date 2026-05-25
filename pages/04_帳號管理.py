@@ -158,13 +158,13 @@ with tab2:
         avatar_cls= "avatar-admin" if role == "admin" else "avatar-inspector"
         avatar_ic = "👑" if role == "admin" else "👤"
 
+        me_tag = '  <span style="font-size:10px;color:var(--orange)">(你)</span>' if is_me else ""
         st.markdown(
             f'<div class="user-card">'
             f'<div class="user-avatar {avatar_cls}">{avatar_ic}</div>'
             f'<div class="user-info">'
             f'<div class="user-name">{u["display_name"]}'
-            f'<span class="{badge_cls}">{badge_txt}</span>'
-            f'{"  <span style=\"font-size:10px;color:var(--orange)\">(你)</span>" if is_me else ""}'
+            f'<span class="{badge_cls}">{badge_txt}</span>{me_tag}'
             f'</div>'
             f'<div class="user-meta">'
             f'帳號：{uname}　核准者：{u.get("approved_by","─")}　'
