@@ -22,7 +22,7 @@ require_login()
 user_info_bar()
 
 # ── 導覽列 ──────────────────────────────────────────────
-c1, c2, c3, c4, c5, c6 = st.columns([1, 1, 1, 1, 1, 3])
+c1, c2, c3, c4, c5, c6, c7 = st.columns([1, 1, 1, 1, 1, 1, 3])
 with c1:
     if st.button("🏠 指揮平台", use_container_width=True): st.switch_page("app.py")
 with c2:
@@ -30,8 +30,10 @@ with c2:
 with c3:
     if st.button("🔬 IQC 進料", use_container_width=True): st.switch_page("pages/06_IQC進料檢驗.py")
 with c4:
-    if st.button("🔍 追蹤查詢", use_container_width=True): st.switch_page("pages/05_追蹤查詢.py")
+    if st.button("📋 IPQC 巡檢", use_container_width=True): st.switch_page("pages/20_📋_IPQC巡檢.py")
 with c5:
+    if st.button("🔍 追蹤查詢", use_container_width=True): st.switch_page("pages/05_追蹤查詢.py")
+with c6:
     if st.button("🤖 AI 分析",  use_container_width=True): st.switch_page("pages/07_AI異常分析.py")
 
 st.markdown(page_header("Dashboard 儀表板",

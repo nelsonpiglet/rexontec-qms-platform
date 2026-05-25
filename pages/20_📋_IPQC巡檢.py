@@ -22,15 +22,21 @@ require_login()
 user_info_bar()
 
 # ── 導覽列 ────────────────────────────────────────────
-_nav_cols = st.columns([1, 1, 1, 1, 4])
-for col, lbl, pg in zip(
-    _nav_cols[:4],
-    ["🏠 指揮平台", "📋 檢驗輸入", "📊 儀表板", "⚙️ 系統設定"],
-    ["app.py", "pages/01_出廠檢驗輸入.py", "pages/02_儀表板.py", "pages/03_系統設定.py"],
-):
-    with col:
-        if st.button(lbl, use_container_width=True):
-            st.switch_page(pg)
+_n1, _n2, _n3, _n4, _n5, _n6, _n7, _n8 = st.columns([1, 1, 1, 1, 1, 1, 1, 2])
+with _n1:
+    if st.button("🏠 指揮平台",  use_container_width=True): st.switch_page("app.py")
+with _n2:
+    if st.button("📋 檢驗輸入",  use_container_width=True): st.switch_page("pages/01_出廠檢驗輸入.py")
+with _n3:
+    if st.button("🔬 IQC 進料",  use_container_width=True): st.switch_page("pages/06_IQC進料檢驗.py")
+with _n4:
+    if st.button("📊 儀表板",    use_container_width=True): st.switch_page("pages/02_儀表板.py")
+with _n5:
+    if st.button("🔍 追蹤查詢",  use_container_width=True): st.switch_page("pages/05_追蹤查詢.py")
+with _n6:
+    if st.button("🤖 AI 分析",   use_container_width=True): st.switch_page("pages/07_AI異常分析.py")
+with _n7:
+    if st.button("⚙️ 系統設定",  use_container_width=True): st.switch_page("pages/03_系統設定.py")
 
 st.markdown(page_header("IPQC 製程巡檢", "製程巡檢記錄 / 首台FAI確認 / 一鍵生成PDF", "IPC"),
             unsafe_allow_html=True)

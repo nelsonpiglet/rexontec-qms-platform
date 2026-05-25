@@ -23,7 +23,7 @@ require_login()
 user_info_bar()
 
 # ── 導覽列 ──────────────────────────────────────────────
-c1, c2, c3, c4, c5 = st.columns([1, 1, 1, 1, 4])
+c1, c2, c3, c4, c5, c6 = st.columns([1, 1, 1, 1, 1, 4])
 with c1:
     if st.button("🏠 指揮平台", use_container_width=True): st.switch_page("app.py")
 with c2:
@@ -32,6 +32,8 @@ with c3:
     if st.button("📊 儀表板",   use_container_width=True): st.switch_page("pages/02_儀表板.py")
 with c4:
     if st.button("🔍 追蹤查詢", use_container_width=True): st.switch_page("pages/05_追蹤查詢.py")
+with c5:
+    if st.button("📋 IPQC 巡檢", use_container_width=True): st.switch_page("pages/20_📋_IPQC巡檢.py")
 
 st.markdown(page_header("AI 異常分析",
                          "NG 模式自動識別 & AI 品質分析報告生成", "AI"),

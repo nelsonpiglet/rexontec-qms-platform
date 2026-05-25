@@ -25,7 +25,7 @@ require_login()
 user_info_bar()
 
 # ── 導覽列 ──────────────────────────────────────────
-col_nav1, col_nav2, col_nav3, col_nav4, col_nav5, col_nav6, col_nav7 = st.columns([1, 1, 1, 1, 1, 1, 2])
+col_nav1, col_nav2, col_nav3, col_nav4, col_nav5, col_nav6, col_nav7, col_nav8 = st.columns([1, 1, 1, 1, 1, 1, 1, 2])
 with col_nav1:
     if st.button("🏠 指揮平台", use_container_width=True):
         st.switch_page("app.py")
@@ -33,15 +33,18 @@ with col_nav2:
     if st.button("📋 檢驗輸入", use_container_width=True):
         st.switch_page("pages/01_出廠檢驗輸入.py")
 with col_nav3:
+    if st.button("📋 IPQC 巡檢", use_container_width=True):
+        st.switch_page("pages/20_📋_IPQC巡檢.py")
+with col_nav4:
     if st.button("📊 儀表板", use_container_width=True):
         st.switch_page("pages/02_儀表板.py")
-with col_nav4:
+with col_nav5:
     if st.button("🔍 追蹤查詢", use_container_width=True):
         st.switch_page("pages/05_追蹤查詢.py")
-with col_nav5:
+with col_nav6:
     if st.button("🤖 AI 分析", use_container_width=True):
         st.switch_page("pages/07_AI異常分析.py")
-with col_nav6:
+with col_nav7:
     if st.button("⚙️ 系統設定", use_container_width=True):
         st.switch_page("pages/03_系統設定.py")
 
