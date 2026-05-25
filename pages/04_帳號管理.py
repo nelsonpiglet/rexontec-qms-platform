@@ -56,15 +56,59 @@ st.markdown("""
 .avatar-admin    { background:#e3f2fd; color:var(--accent); }
 .avatar-pending  { background:#fef9e7; color:var(--orange); }
 .avatar-inspector{ background:#eafaf1; color:var(--teal); }
+.avatar-engineer { background:#ede7f6; color:#7b68ee; }
+.avatar-viewer   { background:#f5f5f5; color:#999; }
 .user-info { flex:1; min-width:180px; }
 .user-name { font-size:13px; font-weight:700; color:var(--navy); }
 .user-meta { font-size:11px; color:var(--muted); margin-top:2px; }
 .badge-admin    { background:var(--accent); color:#fff; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:6px; }
 .badge-inspector{ background:var(--teal);   color:#fff; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:6px; }
+.badge-engineer { background:#7b68ee;       color:#fff; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:6px; }
+.badge-viewer   { background:#999999;       color:#fff; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:6px; }
 .badge-pending  { background:var(--orange); color:#fff; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:6px; }
 .badge-rejected { background:var(--cr);     color:#fff; padding:1px 8px; border-radius:10px; font-size:10px; font-weight:700; margin-left:6px; }
 </style>
 """, unsafe_allow_html=True)
+
+# ── 角色常數 ──────────────────────────────────────────
+ROLE_OPTIONS = [
+    "viewer（一般瀏覽者）",
+    "inspector（檢驗員）",
+    "engineer（工程師）",
+    "admin（管理員）",
+]
+ROLE_LABEL = {
+    "admin":     "管理員",
+    "inspector": "檢驗員",
+    "engineer":  "工程師",
+    "viewer":    "一般瀏覽者",
+}
+ROLE_BADGE = {
+    "admin":     "badge-admin",
+    "inspector": "badge-inspector",
+    "engineer":  "badge-engineer",
+    "viewer":    "badge-viewer",
+}
+ROLE_AVATAR = {
+    "admin":     ("avatar-admin",    "👑"),
+    "inspector": ("avatar-inspector","👤"),
+    "engineer":  ("avatar-engineer", "🔧"),
+    "viewer":    ("avatar-viewer",   "👁"),
+}
+
+def _parse_role(sel: str) -> str:
+    """從 selectbox 選項字串解析出角色 key"""
+    for key in ["admin", "engineer", "inspector", "viewer"]:
+        if key in sel:
+            return key
+    return "viewer"
+
+def _role_index(role: str) -> int:
+    """回傳 role 在 ROLE_OPTIONS 中的索引（找不到給 0）"""
+    for i, opt in enumerate(ROLE_OPTIONS):
+        if role in opt:
+            return i
+    return 0
 
 me = st.session_state.get("oqc_username", "")
 all_users = get_all_users()
@@ -121,7 +165,8 @@ with tab1:
             a1, a2, a3, a4 = st.columns([2, 2, 1, 1])
             with a1:
                 role_sel = st.selectbox(
-                    "授予角色", ["inspector（檢驗員）", "admin（管理員）"],
+                    "授予角色", ROLE_OPTIONS,
+                    index=1,  # 預設 inspector（檢驗員）
                     key=f"role_sel_{uname}",
                     label_visibility="collapsed",
                 )
@@ -130,9 +175,9 @@ with tab1:
             with a3:
                 if st.button("✅ 核准", key=f"approve_{uname}",
                              use_container_width=True, type="primary"):
-                    role = "admin" if "admin" in role_sel else "inspector"
+                    role = _parse_role(role_sel)
                     approve_user(uname, by=me, role=role)
-                    st.success(f"已核准「{u['display_name']}」（{role}）")
+                    st.success(f"已核准「{u['display_name']}」（{ROLE_LABEL.get(role, role)}）")
                     st.rerun()
             with a4:
                 if st.button("❌ 拒絕", key=f"reject_{uname}",
@@ -153,10 +198,9 @@ with tab2:
         role  = u["role"]
         is_me = (uname == me)
 
-        badge_cls = "badge-admin" if role == "admin" else "badge-inspector"
-        badge_txt = "管理員" if role == "admin" else "檢驗員"
-        avatar_cls= "avatar-admin" if role == "admin" else "avatar-inspector"
-        avatar_ic = "👑" if role == "admin" else "👤"
+        badge_cls  = ROLE_BADGE.get(role, "badge-inspector")
+        badge_txt  = ROLE_LABEL.get(role, role)
+        avatar_cls, avatar_ic = ROLE_AVATAR.get(role, ("avatar-inspector", "👤"))
 
         me_tag = '  <span style="font-size:10px;color:var(--orange)">(你)</span>' if is_me else ""
         st.markdown(
@@ -176,8 +220,8 @@ with tab2:
         b1, b2, b3 = st.columns([3, 1, 1])
         with b1:
             new_role = st.selectbox(
-                "角色", ["inspector（檢驗員）", "admin（管理員）"],
-                index=1 if role == "admin" else 0,
+                "角色", ROLE_OPTIONS,
+                index=_role_index(role),
                 key=f"edit_role_{uname}",
                 label_visibility="collapsed",
                 disabled=is_me,  # 不能改自己的角色
@@ -185,9 +229,9 @@ with tab2:
         with b2:
             if not is_me:
                 if st.button("更新角色", key=f"upd_role_{uname}", use_container_width=True):
-                    nr = "admin" if "admin" in new_role else "inspector"
+                    nr = _parse_role(new_role)
                     update_role(uname, nr)
-                    st.success(f"已更新「{u['display_name']}」角色為 {nr}")
+                    st.success(f"已更新「{u['display_name']}」角色為 {ROLE_LABEL.get(nr, nr)}")
                     st.rerun()
         with b3:
             if not is_me:
@@ -208,7 +252,7 @@ with tab3:
         rows.append({
             "帳號":     u["username"],
             "姓名":     u["display_name"],
-            "角色":     {"admin": "管理員", "inspector": "檢驗員"}.get(u["role"], u["role"]),
+            "角色":     ROLE_LABEL.get(u["role"], u["role"]),
             "狀態":     {"active": "✅ 啟用", "pending": "⏳ 待審核",
                          "rejected": "❌ 拒絕"}.get(u["status"], u["status"]),
             "核准者":   u.get("approved_by", "─"),
@@ -316,7 +360,7 @@ with tab4:
         with st.form("admin_add_user"):
             na_uname = st.text_input("帳號 *", placeholder="例：john_wang")
             na_dname = st.text_input("姓名 *", placeholder="例：王大明")
-            na_role  = st.selectbox("角色", ["inspector（檢驗員）", "admin（管理員）"])
+            na_role  = st.selectbox("角色", ROLE_OPTIONS, index=1)  # 預設 inspector
             na_p1    = st.text_input("密碼 *（至少 6 碼）", type="password")
             na_p2    = st.text_input("確認密碼 *", type="password")
             if st.form_submit_button("新增帳號", type="primary", use_container_width=True):
@@ -325,11 +369,11 @@ with tab4:
                 elif na_p1 != na_p2:
                     st.error("兩次密碼不一致")
                 else:
-                    role = "admin" if "admin" in na_role else "inspector"
+                    role = _parse_role(na_role)
                     ok, msg = create_user(na_uname.strip(), na_dname.strip(),
                                           na_p1, role=role, status="active")
                     if ok:
-                        st.success(f"✅ 帳號「{na_dname.strip()}」建立成功")
+                        st.success(f"✅ 帳號「{na_dname.strip()}」建立成功（{ROLE_LABEL.get(role, role)}）")
                         st.rerun()
                     else:
                         st.error(msg)

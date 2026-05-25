@@ -2,7 +2,7 @@
 REXONTEC OQC — 帳號認證模組
 儲存位置：config/users.json
 密碼：SHA-256 + 隨機 salt
-角色：admin（管理員）/ inspector（檢驗員）
+角色：admin（管理員）/ inspector（檢驗員）/ engineer（工程師）/ viewer（一般瀏覽者）
 狀態：active / pending（待審核）/ rejected（已拒絕）
 """
 import os, json, hashlib, secrets, copy
@@ -204,8 +204,13 @@ def user_info_bar():
     disp       = st.session_state.get("oqc_display", "")
     role       = st.session_state.get("oqc_role", "")
     auto_login = st.session_state.get("oqc_auto_login", False)
-    rl         = "管理員 👑" if role == "admin" else "檢驗員"
-    color      = "var(--accent)" if role == "admin" else "var(--teal)"
+    _role_display = {
+        "admin":     ("管理員 👑",   "var(--accent)"),
+        "inspector": ("檢驗員",      "var(--teal)"),
+        "engineer":  ("工程師",      "#7b68ee"),
+        "viewer":    ("一般瀏覽者",  "#999999"),
+    }
+    rl, color = _role_display.get(role, ("使用者", "var(--muted)"))
     mode_tag   = (
         '<span style="background:#f0a500;color:#fff;padding:1px 8px;border-radius:10px;'
         'font-size:10px;margin-left:8px;font-weight:700">免登入</span>'
