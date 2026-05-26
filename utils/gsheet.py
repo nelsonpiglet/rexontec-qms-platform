@@ -573,14 +573,23 @@ def load_sqm_defects():
 
 def update_sqm_defect(rec_id: str, field: str, value: str):
     """更新 SQM_異常登錄 中某筆記錄的特定欄位"""
-    import pandas as pd
     ws = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
-    records = ws.get_all_records()
-    for i, rec in enumerate(records):
-        if rec.get("記錄編號") == rec_id:
-            row_idx = i + 2          # 1-based + header row
+    all_vals = ws.get_all_values()
+    for i, row in enumerate(all_vals[1:], start=2):   # i = Google Sheet 列號
+        if row and row[0] == rec_id:
             col_idx = COLS_SQM_DEFECT.index(field) + 1
-            ws.update_cell(row_idx, col_idx, str(value))
+            ws.update_cell(i, col_idx, str(value))
+            return
+    raise ValueError(f"記錄 {rec_id} 不存在")
+
+
+def delete_sqm_defect(rec_id: str):
+    """刪除 SQM_異常登錄 中指定記錄（整列刪除）"""
+    ws = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
+    all_vals = ws.get_all_values()
+    for i, row in enumerate(all_vals[1:], start=2):   # i = Google Sheet 列號
+        if row and row[0] == rec_id:
+            ws.delete_rows(i)
             return
     raise ValueError(f"記錄 {rec_id} 不存在")
 

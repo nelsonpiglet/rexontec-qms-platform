@@ -657,6 +657,36 @@ with tab_excel:
                                 key="import_confirm",
                             )
 
+                            # ── 重複偵測 ─────────────────
+                            from utils.gsheet import load_sqm_defects as _load_existing
+                            try:
+                                _exist = _load_existing()
+                                if not _exist.empty:
+                                    _dup_keys = set(
+                                        zip(
+                                            _exist.get("零件編號（單據號碼）", pd.Series(dtype=str)).astype(str),
+                                            _exist.get("廠商",               pd.Series(dtype=str)).astype(str),
+                                            _exist.get("發生日期",           pd.Series(dtype=str)).astype(str),
+                                        )
+                                    )
+                                    _dup_rows = []
+                                    for _i, _r in df_to_import.iterrows():
+                                        _k = (
+                                            str(_r.get("零件編號（單據號碼）", "")).strip(),
+                                            str(_r.get("廠商", "")).strip(),
+                                            _coerce_date(str(_r.get("發生日期", ""))),
+                                        )
+                                        if _k in _dup_keys:
+                                            _dup_rows.append(_i + 2)
+                                    if _dup_rows:
+                                        st.warning(
+                                            f"⚠️ 偵測到 **{len(_dup_rows)}** 筆可能重複的資料（Excel 第 {_dup_rows} 行）：\n\n"
+                                            "零件編號 + 廠商 + 發生日期 與現有記錄相同。\n\n"
+                                            "如確定是不同批次，可繼續匯入；若是重複匯入請取消。"
+                                        )
+                            except Exception:
+                                pass
+
                             if st.button(
                                 f"🚀 確認匯入 {n_ok} 筆 IQC 異常記錄",
                                 type="primary",

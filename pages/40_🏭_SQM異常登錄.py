@@ -17,7 +17,7 @@ from utils.sqm    import (
 )
 from utils.gsheet import (
     append_sqm_defect, load_sqm_defects,
-    update_sqm_defect, append_scar,
+    update_sqm_defect, delete_sqm_defect, append_scar,
 )
 
 st.set_page_config(
@@ -367,3 +367,34 @@ with tab_query:
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"❌ {e}")
+
+                    # 刪除記錄
+                    st.markdown("---")
+                    del_col1, del_col2 = st.columns([3, 1])
+                    with del_col2:
+                        if st.button(
+                            "🗑️ 刪除此記錄",
+                            key=f"del_{rid}",
+                            type="secondary",
+                            use_container_width=True,
+                            help="永久刪除此筆異常記錄，無法復原",
+                        ):
+                            st.session_state[f"confirm_del_{rid}"] = True
+                    if st.session_state.get(f"confirm_del_{rid}"):
+                        with del_col1:
+                            st.warning(f"⚠️ 確定要永久刪除 **{rid}** 嗎？此動作無法復原！")
+                        dc1, dc2 = st.columns(2)
+                        with dc1:
+                            if st.button("✅ 確認刪除", key=f"del_yes_{rid}", type="primary"):
+                                try:
+                                    delete_sqm_defect(rid)
+                                    st.success(f"✅ 已刪除 {rid}")
+                                    st.session_state.pop(f"confirm_del_{rid}", None)
+                                    st.cache_data.clear()
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ {e}")
+                        with dc2:
+                            if st.button("❌ 取消", key=f"del_no_{rid}"):
+                                st.session_state.pop(f"confirm_del_{rid}", None)
+                                st.rerun()
