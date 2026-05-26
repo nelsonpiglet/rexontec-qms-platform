@@ -22,7 +22,7 @@ require_login()
 user_info_bar()
 
 # ── 平台導覽列 ──────────────────────────────────────
-n1, n2, n3, n4, n5, n6, n7 = st.columns([1, 1, 1, 1, 1, 1, 2])
+n1, n2, n3, n4, n5, n6, n7, n8 = st.columns([1, 1, 1, 1, 1, 1, 1, 2])
 with n1:
     if st.button("🔬 檢驗品質", use_container_width=True):
         st.switch_page("pages/01_出廠檢驗輸入.py")
@@ -39,6 +39,9 @@ with n5:
     if st.button("🤖 AI 分析",  use_container_width=True):
         st.switch_page("pages/07_AI異常分析.py")
 with n6:
+    if st.button("🏭 SQM 供應商", use_container_width=True):
+        st.switch_page("pages/40_🏭_SQM異常登錄.py")
+with n7:
     if st.button("⚙️ 系統設定", use_container_width=True):
         st.switch_page("pages/03_系統設定.py")
 
@@ -285,10 +288,13 @@ with c3:
 c4, c5, c6 = st.columns(3)
 
 with c4:
-    st.markdown(_reserved_card(
-        "📊", "品質分析中心",
-        "跨系統數據整合分析<br>趨勢預測 · 決策支援報表",
+    st.markdown(_active_card(
+        "🏭", "SQM 供應商品質管理",
+        "進料異常登錄 · SCAR 追蹤管理<br>供應商品質 Dashboard · CAPA 管控",
+        "#d35400",
     ), unsafe_allow_html=True)
+    if st.button("進入 SQM 供應商品質 →", key="go_sqm", use_container_width=True):
+        st.switch_page("pages/40_🏭_SQM異常登錄.py")
 
 with c5:
     st.markdown(_reserved_card(

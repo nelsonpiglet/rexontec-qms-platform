@@ -18,10 +18,12 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-SHEET_ESC   = "OQC_電調"
-SHEET_MOTOR = "OQC_馬達"
-SHEET_IQC   = "IQC"
-SHEET_IPQC  = "IPQC"
+SHEET_ESC        = "OQC_電調"
+SHEET_MOTOR      = "OQC_馬達"
+SHEET_IQC        = "IQC"
+SHEET_IPQC       = "IPQC"
+SHEET_SQM_DEFECT = "SQM_異常登錄"
+SHEET_SQM_SCAR   = "SQM_SCAR"
 
 # ─────────────────────────────────────────────────────
 # 各表的欄位定義
@@ -420,6 +422,200 @@ def load_ipqc_records():
         return pd.DataFrame(records) if records else pd.DataFrame(columns=COLS_IPQC)
     except Exception:
         return pd.DataFrame(columns=COLS_IPQC)
+
+
+# ═══════════════════════════════════════════════════════
+# SQM 供應商品質管理 — 資料表欄位定義
+# ═══════════════════════════════════════════════════════
+COLS_SQM_DEFECT = [
+    "記錄編號",   # A
+    "建立時間",   # B
+    "日期",       # C
+    "供應商",     # D
+    "料號",       # E
+    "品名",       # F
+    "批號",       # G
+    "異常類別",   # H
+    "異常描述",   # I
+    "異常數量",   # J
+    "批量",       # K
+    "判定",       # L
+    "責任單位",   # M
+    "照片URL",    # N
+    "處理狀態",   # O
+    "SCAR編號",   # P
+    "建立人員",   # Q
+    "備註",       # R
+]
+
+COLS_SQM_SCAR = [
+    "SCAR編號",       # A
+    "建立時間",       # B
+    "異常記錄編號",   # C
+    "供應商",         # D
+    "料號",           # E
+    "品名",           # F
+    "異常日期",       # G
+    "異常類別",       # H
+    "異常描述",       # I
+    "異常數量",       # J
+    "要求回覆期限",   # K
+    "供應商回覆狀態", # L
+    "供應商回覆日期", # M
+    "供應商回覆內容", # N
+    "臨時對策_D3",    # O
+    "根本原因_D4D5",  # P
+    "永久對策_D6",    # Q
+    "CAPA驗證_D7",    # R
+    "CAPA狀態",       # S
+    "結案狀態",       # T
+    "責任歸屬",       # U
+    "建立人員",       # V
+    "主管審核",       # W
+    "備註",           # X
+]
+
+
+# ──────────────────────────────────────────────────────
+# SQM 進料異常登錄
+# ──────────────────────────────────────────────────────
+def append_sqm_defect(data: dict) -> str:
+    """
+    新增一筆進料異常記錄至 SQM_異常登錄 工作表。
+    data keys: 日期, 供應商, 料號, 品名, 批號, 異常類別, 異常描述,
+               異常數量, 批量, 判定, 責任單位, 照片URL, 建立人員, 備註
+    回傳: 記錄編號
+    """
+    ws = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
+    _ensure_headers(ws, COLS_SQM_DEFECT)
+
+    total   = len(ws.get_all_values())
+    year    = datetime.now().year
+    rec_id  = f"SQM-{year}-{str(total).zfill(4)}"
+    now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+
+    row = [
+        rec_id,  now_str,
+        str(data.get("日期",   "")),
+        data.get("供應商",     ""),
+        data.get("料號",       ""),
+        data.get("品名",       ""),
+        data.get("批號",       ""),
+        data.get("異常類別",   ""),
+        data.get("異常描述",   ""),
+        data.get("異常數量",   0),
+        data.get("批量",       0),
+        data.get("判定",       ""),
+        data.get("責任單位",   ""),
+        data.get("照片URL",    ""),
+        data.get("處理狀態",   "待處理"),
+        "",   # SCAR編號（待開立）
+        data.get("建立人員",   ""),
+        data.get("備註",       ""),
+    ]
+    ws.append_row(row, value_input_option="USER_ENTERED")
+    return rec_id
+
+
+def load_sqm_defects():
+    """讀取所有進料異常記錄，回傳 DataFrame"""
+    import pandas as pd
+    try:
+        ws      = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
+        records = ws.get_all_records()
+        return pd.DataFrame(records) if records else pd.DataFrame(columns=COLS_SQM_DEFECT)
+    except Exception:
+        return pd.DataFrame(columns=COLS_SQM_DEFECT)
+
+
+def update_sqm_defect(rec_id: str, field: str, value: str):
+    """更新 SQM_異常登錄 中某筆記錄的特定欄位"""
+    import pandas as pd
+    ws = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
+    records = ws.get_all_records()
+    for i, rec in enumerate(records):
+        if rec.get("記錄編號") == rec_id:
+            row_idx = i + 2          # 1-based + header row
+            col_idx = COLS_SQM_DEFECT.index(field) + 1
+            ws.update_cell(row_idx, col_idx, str(value))
+            return
+    raise ValueError(f"記錄 {rec_id} 不存在")
+
+
+# ──────────────────────────────────────────────────────
+# SCAR 供應商異常單
+# ──────────────────────────────────────────────────────
+def append_scar(data: dict) -> str:
+    """
+    新增一筆 SCAR 記錄至 SQM_SCAR 工作表。
+    data keys: 異常記錄編號, 供應商, 料號, 品名, 異常日期,
+               異常類別, 異常描述, 異常數量, 要求回覆期限,
+               責任歸屬, 建立人員, 備註
+    回傳: SCAR編號
+    """
+    ws = _open_sheet(SHEET_SQM_SCAR, COLS_SQM_SCAR)
+    _ensure_headers(ws, COLS_SQM_SCAR)
+
+    total    = len(ws.get_all_values())
+    year     = datetime.now().year
+    scar_no  = f"SCAR-{year}-{str(total).zfill(4)}"
+    now_str  = datetime.now().strftime("%Y/%m/%d %H:%M")
+
+    row = [
+        scar_no,  now_str,
+        data.get("異常記錄編號", ""),
+        data.get("供應商",       ""),
+        data.get("料號",         ""),
+        data.get("品名",         ""),
+        str(data.get("異常日期", "")),
+        data.get("異常類別",     ""),
+        data.get("異常描述",     ""),
+        data.get("異常數量",     0),
+        str(data.get("要求回覆期限", "")),
+        "待回覆",   # 供應商回覆狀態
+        "",         # 供應商回覆日期
+        "",         # 供應商回覆內容
+        "",  "",  "",  "",   # D3~D7
+        "未開始",   # CAPA狀態
+        "Open",     # 結案狀態
+        data.get("責任歸屬",  "供應商責任"),
+        data.get("建立人員",  ""),
+        "",         # 主管審核
+        data.get("備註",      ""),
+    ]
+    ws.append_row(row, value_input_option="USER_ENTERED")
+    return scar_no
+
+
+def load_scars():
+    """讀取所有 SCAR 記錄，回傳 DataFrame"""
+    import pandas as pd
+    try:
+        ws      = _open_sheet(SHEET_SQM_SCAR, COLS_SQM_SCAR)
+        records = ws.get_all_records()
+        return pd.DataFrame(records) if records else pd.DataFrame(columns=COLS_SQM_SCAR)
+    except Exception:
+        return pd.DataFrame(columns=COLS_SQM_SCAR)
+
+
+def update_scar(scar_no: str, updates: dict):
+    """
+    更新 SCAR 記錄中的多個欄位。
+    updates: {欄位名: 新值, ...}
+    """
+    ws = _open_sheet(SHEET_SQM_SCAR, COLS_SQM_SCAR)
+    records = ws.get_all_records()
+    row_idx = None
+    for i, rec in enumerate(records):
+        if rec.get("SCAR編號") == scar_no:
+            row_idx = i + 2
+            break
+    if row_idx is None:
+        raise ValueError(f"SCAR {scar_no} 不存在")
+    for field, value in updates.items():
+        if field in COLS_SQM_SCAR:
+            col_idx = COLS_SQM_SCAR.index(field) + 1
+            ws.update_cell(row_idx, col_idx, str(value))
 
 
 # ─────────────────────────────────────────────────────
