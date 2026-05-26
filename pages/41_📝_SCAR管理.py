@@ -16,6 +16,7 @@ from utils.gsheet import (
     load_sqm_defects, append_scar, load_scars, update_scar,
     update_sqm_defect,
 )
+from utils.email_utils import send_supplier_scar_email, build_reply_url
 
 st.set_page_config(
     page_title="REXONTEC 力科 | SCAR 管理",
@@ -271,6 +272,82 @@ with tab_list:
                             st.rerun()
                         except Exception as e:
                             st.error(f"❌ 更新失敗：{e}")
+
+                    # ── 供應商通知信 ─────────────────────────────
+                    st.markdown("---")
+                    st.markdown("**📧 寄送供應商通知信**")
+
+                    reply_url = build_reply_url(str(row["SCAR編號"]))
+                    st.markdown(
+                        f'<div style="font-size:11px;color:#6b7c93;margin-bottom:8px">'
+                        f'回覆連結：<a href="{reply_url}" target="_blank">'
+                        f'{reply_url[:72]}{"…" if len(reply_url) > 72 else ""}'
+                        f'</a></div>',
+                        unsafe_allow_html=True,
+                    )
+
+                    em_c1, em_c2 = st.columns([3, 5])
+                    with em_c1:
+                        sup_email = st.text_input(
+                            "供應商 Email",
+                            placeholder="supplier@example.com",
+                            key=f"semail_{row['SCAR編號']}",
+                        )
+                    with em_c2:
+                        st.markdown("<div style='height:4px'></div>",
+                                    unsafe_allow_html=True)
+                        copy_link_btn = st.button(
+                            "📋 複製回覆連結",
+                            key=f"copylink_{row['SCAR編號']}",
+                            help="點擊後連結會顯示於下方，方便手動複製",
+                        )
+                    if copy_link_btn:
+                        st.code(reply_url, language=None)
+
+                    send_c1, _ = st.columns([2, 8])
+                    with send_c1:
+                        send_btn = st.button(
+                            "📧 寄送通知信",
+                            key=f"sendbtn_{row['SCAR編號']}",
+                            type="primary",
+                            use_container_width=True,
+                        )
+
+                    if send_btn:
+                        if not sup_email.strip() or "@" not in sup_email:
+                            st.warning("⚠️ 請填寫有效的供應商 Email 地址後再寄送。")
+                        else:
+                            with st.spinner("寄送通知信中…"):
+                                ok, msg_txt = send_supplier_scar_email(
+                                    scar_no=str(row["SCAR編號"]),
+                                    supplier_name=str(row.get("供應商", "")),
+                                    supplier_email=sup_email.strip(),
+                                    part_no=str(row.get("料號", "")),
+                                    part_name=str(row.get("品名", "")),
+                                    defect_cat=str(row.get("異常類別", "")),
+                                    defect_desc=str(row.get("異常描述", "")),
+                                    defect_qty=str(row.get("異常數量", "")),
+                                    reply_deadline=str(row.get("要求回覆期限", "")),
+                                )
+                            if ok:
+                                st.success(msg_txt)
+                                # 確保 Google Sheet 供應商回覆狀態為「待回覆」
+                                try:
+                                    current_rep = str(row.get("供應商回覆狀態", ""))
+                                    if current_rep not in ("已回覆",):
+                                        update_scar(
+                                            str(row["SCAR編號"]),
+                                            {"供應商回覆狀態": "待回覆"},
+                                        )
+                                        st.cache_data.clear()
+                                except Exception:
+                                    pass
+                            else:
+                                st.error(msg_txt)
+                                st.info(
+                                    "💡 若 Email 發送設定尚未完成，請複製上方「回覆連結」"
+                                    "手動貼入通知信，供應商點擊後即可填寫回覆。"
+                                )
 
         elif total_s > 50:
             st.caption("🔍 超過 50 筆，請縮小篩選範圍以展開明細。")
