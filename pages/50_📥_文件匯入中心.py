@@ -73,20 +73,22 @@ QMS_FIELDS: dict[str, dict] = {
 }
 
 # 欄位名稱關鍵字對應（規則式智能辨識）
+# ⚠️ 注意：避免使用過短或通用英文關鍵字（如 name/part/lot/ng），
+#    會誤配 Unnamed:N 或其他欄位。中文關鍵字較安全。
 _FIELD_KEYWORDS: dict[str, list[str]] = {
-    "日期":     ["日期", "date", "檢驗日", "入料日", "時間"],
-    "供應商":   ["供應商", "vendor", "supplier", "廠商"],
-    "料號":     ["料號", "part", "品號", "零件號", "partno", "part_no", "物料"],
-    "品名":     ["品名", "name", "item", "品項", "名稱", "product"],
-    "批號":     ["批號", "lot", "batch", "lot_no", "lotno", "批次"],
-    "批量":     ["批量", "total_qty", "批次數量", "總量", "total"],
-    "異常數量": ["異常數量", "ng_qty", "不良數", "不良品", "不良", "defect_qty", "ng"],
-    "異常類別": ["異常類別", "category", "類別", "defect_type", "故障類別", "分類"],
-    "異常描述": ["異常描述", "description", "描述", "問題描述", "defect_desc", "failure"],
-    "判定":     ["判定", "disposition", "result", "verdict", "處置", "判定結果"],
-    "責任單位": ["責任單位", "responsibility", "responsible", "責任", "dept"],
-    "建立人員": ["建立人員", "inspector", "檢驗員", "operator", "人員", "creator"],
-    "備註":     ["備註", "remark", "note", "說明", "comment"],
+    "日期":     ["日期", "發生日期", "入料日期", "檢驗日", "入料日", "時間"],
+    "供應商":   ["供應商", "廠商", "vendor", "supplier"],
+    "料號":     ["料號", "零件編號", "零件號", "品號", "物料號", "partno", "part_no"],
+    "品名":     ["品名", "零件名稱", "品項", "物料名稱", "零件名"],
+    "批號":     ["批號", "批次號", "lot_no", "lotno", "batch_no"],
+    "批量":     ["批量", "批次數量", "total_qty", "批次總量"],
+    "異常數量": ["異常數量", "不良數量", "不良品數", "ng_qty", "defect_qty"],
+    "異常類別": ["異常類別", "問題類別", "故障類別", "異常分類", "defect_type"],
+    "異常描述": ["異常描述", "問題點", "異常說明", "問題描述", "異常現象", "defect_desc"],
+    "判定":     ["判定", "判定結果", "處置結果", "disposition", "verdict"],
+    "責任單位": ["責任單位", "責任歸屬", "responsibility"],
+    "建立人員": ["建立人員", "負責人", "檢驗員", "inspector", "creator"],
+    "備註":     ["備註", "remark", "comment", "note"],
 }
 
 REQUIRED_FIELDS = [f for f, v in QMS_FIELDS.items() if v["required"]]
@@ -96,18 +98,36 @@ OPTIONAL_FIELDS = [f for f, v in QMS_FIELDS.items() if not v["required"]]
 # ═══════════════════════════════════════════════════
 # 工具函式
 # ═══════════════════════════════════════════════════
+def _norm(s: str) -> str:
+    """標準化欄位名稱：去除空格/底線/括號/標點，轉小寫"""
+    import re
+    return re.sub(r"[^\w一-鿿]", "", str(s).lower()).replace("_", "")
+
+
 def _auto_match(excel_cols: list[str]) -> dict[str, str]:
-    """規則式欄位自動對應，回傳 {QMS欄位 → Excel欄位}"""
+    """
+    規則式欄位自動對應，回傳 {QMS欄位 → Excel欄位}。
+    安全比對：純中文關鍵字用 substring；英文關鍵字須完全相符，
+    避免 'name' 誤配 'Unnamed: 1' 之類問題。
+    """
+    import re
     mapping: dict[str, str] = {}
     used: set[str] = set()
     for qms_field, keywords in _FIELD_KEYWORDS.items():
         for col in excel_cols:
             if col in used:
                 continue
-            col_norm = str(col).lower().replace(" ", "").replace("_", "")
+            col_norm = _norm(col)
             for kw in keywords:
-                kw_norm = kw.lower().replace(" ", "").replace("_", "")
-                if kw_norm in col_norm or col_norm == kw_norm:
+                kw_norm = _norm(kw)
+                # 中文關鍵字：substring 即可（中文無「詞語」邊界問題）
+                is_cjk_kw = bool(re.search(r"[一-鿿]", kw))
+                matched = (
+                    kw_norm in col_norm         # CJK: substring
+                    if is_cjk_kw
+                    else col_norm == kw_norm    # 英文: 完全相符
+                )
+                if matched:
                     mapping[qms_field] = col
                     used.add(col)
                     break
@@ -327,33 +347,78 @@ with tab_excel:
                     help="此 Excel 包含多個工作表",
                 )
 
+            # ── 先不帶 header 讀取，讓使用者確認標題列位置 ──
             try:
-                df_raw = (
-                    pd.read_excel(xls, sheet_name=selected_sheet, dtype=str)
-                    .fillna("")
+                df_peek = (
+                    pd.read_excel(
+                        xls, sheet_name=selected_sheet,
+                        header=None, dtype=str, nrows=8,
+                    ).fillna("")
                 )
-                df_raw.columns = [str(c).strip() for c in df_raw.columns]
-                # 去除全空列
-                df_raw = df_raw[
-                    ~df_raw.apply(lambda r: r.str.strip().eq("").all(), axis=1)
-                ].reset_index(drop=True)
-                read_ok = True
+                peek_ok = True
             except Exception as e:
                 st.error(f"❌ 讀取工作表失敗：{e}")
-                read_ok = False
+                peek_ok = False
 
-            if read_ok:
-                if df_raw.empty:
-                    st.warning("⚠️ 工作表無資料，請確認 Excel 格式正確。")
-                else:
-                    st.success(
-                        f"✅ 成功讀取 **{selected_sheet}**｜"
-                        f"**{len(df_raw)}** 筆資料｜**{len(df_raw.columns)}** 個欄位"
+            if peek_ok:
+                # 顯示原始前8列（不含自動 header），協助確認標題列
+                with st.expander("🔍 原始資料前8列預覽（用於確認標題列位置）", expanded=True):
+                    st.dataframe(
+                        df_peek.rename(columns=lambda c: f"第 {c+1} 欄"),
+                        use_container_width=True,
                     )
 
-                    with st.expander("📋 原始資料預覽（前 5 筆）", expanded=False):
-                        st.dataframe(df_raw.head(), use_container_width=True)
+                hdr_col, info_col = st.columns([1, 3])
+                with hdr_col:
+                    header_row = st.number_input(
+                        "📌 欄位標題在第幾列？",
+                        min_value=1, max_value=8, value=1, step=1,
+                        help="若 Excel 第一列是大標題（如「2026年IQC問題點病歷」），請填 2",
+                        key="header_row_sel",
+                    )
+                with info_col:
+                    st.info(
+                        "**常見情況：**\n"
+                        "- 第1列直接是欄位名稱 → 填 **1**\n"
+                        "- 第1列是大標題合併列，第2列才是欄位名稱 → 填 **2**"
+                    )
 
+                # ── 用正確的 header 重新讀取 ──────────────────
+                try:
+                    df_raw = (
+                        pd.read_excel(
+                            xls, sheet_name=selected_sheet,
+                            header=int(header_row) - 1, dtype=str,
+                        ).fillna("")
+                    )
+                    # 清理欄位名稱：去括號、多餘空格、換行
+                    import re as _re
+                    df_raw.columns = [
+                        _re.sub(r"\s+", " ", str(c)).strip()
+                        for c in df_raw.columns
+                    ]
+                    # 去除 Unnamed 欄（合併儲存格殘留的空欄）
+                    df_raw = df_raw.loc[
+                        :, ~df_raw.columns.str.startswith("Unnamed:")
+                    ]
+                    # 去除全空列
+                    df_raw = df_raw[
+                        ~df_raw.apply(lambda r: r.str.strip().eq("").all(), axis=1)
+                    ].reset_index(drop=True)
+                    read_ok = True
+                except Exception as e:
+                    st.error(f"❌ 讀取工作表失敗：{e}")
+                    read_ok = False
+
+                if read_ok:
+                    if df_raw.empty:
+                        st.warning("⚠️ 工作表無資料，請確認 Excel 格式與標題列設定。")
+                    else:
+                        st.success(
+                            f"✅ 成功讀取 **{selected_sheet}**｜"
+                            f"**{len(df_raw)}** 筆資料｜"
+                            f"欄位：{' · '.join(df_raw.columns.tolist())}"
+                        )
                     st.divider()
 
                     # ────────────────────────────────
