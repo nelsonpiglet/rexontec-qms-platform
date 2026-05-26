@@ -207,22 +207,33 @@ with ch1:
     st.markdown("</div>", unsafe_allow_html=True)
 
 with ch2:
-    st.markdown("""
+    # 優先顯示「異常類別」，若無則退回「來源」
+    pareto_col = "異常類別" if ("異常類別" in df.columns and df["異常類別"].str.strip().ne("").any()) \
+                 else ("來源" if "來源" in df.columns else None)
+    pareto_title = "📊 異常類別 Pareto" if pareto_col == "異常類別" else "📊 異常來源別 Pareto"
+
+    DEFECT_CAT_COLORS = {
+        "尺寸": "#3498db", "外觀": "#e74c3c", "功能": "#c0392b",
+        "包裝": "#1abc9c", "組裝": "#e67e22", "材料": "#9b59b6", "製程": "#f39c12",
+    }
+
+    st.markdown(f"""
 <div style="background:#fff;border:1px solid #dce3ec;border-radius:8px;
             padding:14px 18px;box-shadow:0 2px 8px rgba(13,27,42,.08);margin-bottom:14px">
   <div style="font-size:13px;font-weight:700;color:#0d1b2a;margin-bottom:10px">
-    📊 異常來源別 Pareto
+    {pareto_title}
   </div>""", unsafe_allow_html=True)
 
-    src_col = "來源" if "來源" in df.columns else None
-    if src_col:
-        cat_cnt = (df.groupby(src_col).size()
+    if pareto_col:
+        cat_cnt = (df[df[pareto_col].str.strip().ne("") if df[pareto_col].dtype == object else df[pareto_col].notna()]
+                     .groupby(pareto_col).size()
                      .reset_index(name="件數")
                      .sort_values("件數", ascending=False))
+        color_map = DEFECT_CAT_COLORS if pareto_col == "異常類別" else SOURCE_COLORS
         if _PLOTLY:
-            cat_colors = [SOURCE_COLORS.get(c, "#888") for c in cat_cnt[src_col]]
+            cat_colors = [color_map.get(c, "#888") for c in cat_cnt[pareto_col]]
             fig2 = go.Figure(go.Bar(
-                x=cat_cnt[src_col], y=cat_cnt["件數"],
+                x=cat_cnt[pareto_col], y=cat_cnt["件數"],
                 marker_color=cat_colors,
                 text=cat_cnt["件數"], textposition="outside",
             ))
@@ -234,9 +245,9 @@ with ch2:
             )
             st.plotly_chart(fig2, use_container_width=True)
         else:
-            st.bar_chart(cat_cnt.set_index(src_col)["件數"])
+            st.bar_chart(cat_cnt.set_index(pareto_col)["件數"])
     else:
-        st.info("無來源欄位資料")
+        st.info("無異常類別資料")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════
@@ -410,7 +421,7 @@ st.markdown("""
   </div>""", unsafe_allow_html=True)
 
 recent_cols = [c for c in [
-    "記錄編號", "發生日期", "來源", "機種",
+    "記錄編號", "發生日期", "來源", "異常類別", "機種",
     "廠商", "零件名稱", "零件編號（單據號碼）",
     "不良數", "P問題點", "負責人", "狀態", "SCAR編號",
 ] if c in df.columns]

@@ -13,6 +13,10 @@ SOURCE_OPTIONS = [
     "稽核發現", "自主檢驗", "其他",
 ]
 
+DEFECT_CATEGORY_OPTIONS = [
+    "尺寸", "外觀", "功能", "包裝", "組裝", "材料", "製程",
+]
+
 IQC_STATUS_OPTIONS = [
     "處理中", "結案", "再發", "暫緩",
 ]

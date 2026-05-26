@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.auth  import require_login, user_info_bar
-from utils.sqm   import SOURCE_OPTIONS, IQC_STATUS_OPTIONS, RESP_OPTIONS
+from utils.sqm   import SOURCE_OPTIONS, IQC_STATUS_OPTIONS, RESP_OPTIONS, DEFECT_CATEGORY_OPTIONS
 from utils.style import QMS_CSS, page_header, topbar
 
 # ── 頁面設定 ──────────────────────────────────────────
@@ -73,6 +73,8 @@ QMS_FIELDS: dict[str, dict] = {
                              "options": IQC_STATUS_OPTIONS},
     "照片":                 {"required": False, "type": "str",  "hint": "Google Drive 照片連結"},
     "廠商稽核":             {"required": False, "type": "str",  "hint": "廠商稽核紀錄"},
+    "異常類別":             {"required": False, "type": "str",  "hint": f"限定值：{'、'.join(DEFECT_CATEGORY_OPTIONS)}",
+                             "options": DEFECT_CATEGORY_OPTIONS},
 }
 
 # 欄位關鍵字對應（規則式智能辨識）
@@ -96,6 +98,7 @@ _FIELD_KEYWORDS: dict[str, list[str]] = {
     "狀態":                 ["狀態", "結果"],
     "照片":                 ["照片", "photo", "image"],
     "廠商稽核":             ["廠商稽核", "稽核", "audit"],
+    "異常類別":             ["異常類別", "不良類別", "缺陷類別", "defect_type", "defect_category"],
 }
 
 REQUIRED_FIELDS = [f for f, v in QMS_FIELDS.items() if v["required"]]
@@ -734,6 +737,7 @@ with tab_excel:
                                             "照片":                 _s("照片"),
                                             "廠商稽核":             audit_val,
                                             "處理狀態":             "待處理",
+                                            "異常類別":             _s("異常類別"),
                                         })
                                         success_ids.append(rec_id)
                                     except Exception as e:

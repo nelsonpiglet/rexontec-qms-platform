@@ -469,6 +469,8 @@ COLS_SQM_DEFECT = [
     # ── 系統連結 ────────────────────────────
     "SCAR編號",            # U
     "處理狀態",            # V  系統用：待處理/SCAR開立中/等待供應商回覆/已結案
+    # ── 分類欄位（新增）──────────────────────
+    "異常類別",            # W  尺寸/外觀/功能/包裝/組裝/材料/製程
 ]
 
 COLS_SQM_SCAR = [
@@ -541,6 +543,7 @@ def append_sqm_defect(data: dict) -> str:
         data.get("廠商稽核",                 ""),
         "",                                   # SCAR編號（待開立）
         data.get("處理狀態",                 "待處理"),
+        data.get("異常類別",                 ""),
     ]
     ws.append_row(row, value_input_option="USER_ENTERED")
     return rec_id
@@ -668,6 +671,65 @@ def update_scar(scar_no: str, updates: dict):
         if field in COLS_SQM_SCAR:
             col_idx = COLS_SQM_SCAR.index(field) + 1
             ws.update_cell(row_idx, col_idx, str(value))
+
+
+# ─────────────────────────────────────────────────────
+# Google Drive 照片上傳
+# ─────────────────────────────────────────────────────
+# 可在 .streamlit/secrets.toml 設定 [sqm] sqm_photo_folder_id = "..."
+# 若未設定則上傳至 Drive 根目錄
+_SQM_PHOTO_FOLDER: str | None = None
+try:
+    _SQM_PHOTO_FOLDER = st.secrets.get("sqm", {}).get("sqm_photo_folder_id")
+except Exception:
+    pass
+
+
+def upload_photo_to_drive(
+    file_bytes: bytes,
+    filename: str,
+    mime_type: str = "image/jpeg",
+) -> str:
+    """
+    上傳照片至 Google Drive，回傳可分享的瀏覽連結。
+    使用與 Google Sheets 相同的 service account 憑證。
+    """
+    import io
+    from googleapiclient.discovery import build
+    from googleapiclient.http import MediaIoBaseUpload
+
+    try:
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"], scopes=SCOPES
+        )
+    except (KeyError, FileNotFoundError):
+        creds = Credentials.from_service_account_file(
+            "service_account.json", scopes=SCOPES
+        )
+
+    service = build("drive", "v3", credentials=creds)
+
+    meta: dict = {"name": filename}
+    if _SQM_PHOTO_FOLDER:
+        meta["parents"] = [_SQM_PHOTO_FOLDER]
+
+    media = MediaIoBaseUpload(
+        io.BytesIO(file_bytes),
+        mimetype=mime_type,
+        resumable=False,
+    )
+    file_resp = service.files().create(
+        body=meta, media_body=media, fields="id"
+    ).execute()
+    file_id = file_resp["id"]
+
+    # 設為任何人可檢視
+    service.permissions().create(
+        fileId=file_id,
+        body={"type": "anyone", "role": "reader"},
+    ).execute()
+
+    return f"https://drive.google.com/file/d/{file_id}/view"
 
 
 # ─────────────────────────────────────────────────────

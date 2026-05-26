@@ -13,11 +13,13 @@ from utils.style  import QMS_CSS, topbar, page_header
 from utils.auth   import require_login, user_info_bar
 from utils.sqm    import (
     SOURCE_OPTIONS, IQC_STATUS_OPTIONS, RESP_OPTIONS,
+    DEFECT_CATEGORY_OPTIONS,
     DEFECT_STATUS, STATUS_COLOR, status_chip,
 )
 from utils.gsheet import (
     append_sqm_defect, load_sqm_defects,
     update_sqm_defect, delete_sqm_defect, append_scar,
+    upload_photo_to_drive,
 )
 
 st.set_page_config(
@@ -77,10 +79,26 @@ with tab_new:
         unsafe_allow_html=True,
     )
 
+    # ── 照片上傳（在 form 外，避免 Streamlit file_uploader 限制）──
+    st.markdown("**📷 上傳不良品照片**")
+    ph1, ph2 = st.columns([2, 3])
+    with ph1:
+        uploaded_photo = st.file_uploader(
+            "選擇照片（JPG / PNG / WEBP，最大 10 MB）",
+            type=["jpg", "jpeg", "png", "webp", "bmp"],
+            key="sqm_photo_file",
+            label_visibility="collapsed",
+        )
+    with ph2:
+        if uploaded_photo:
+            st.image(uploaded_photo, caption="預覽", width=220)
+        else:
+            st.caption("或貼入 Google Drive 照片連結（表單內）")
+
     with st.form("sqm_form", clear_on_submit=True):
         # ── 基本資訊 ──────────────────────────────────
         st.markdown("**📌 基本資訊**")
-        r1c1, r1c2, r1c3 = st.columns(3)
+        r1c1, r1c2, r1c3, r1c4 = st.columns(4)
         with r1c1:
             f_date   = st.date_input("發生日期 ⭐", value=date.today())
         with r1c2:
@@ -89,6 +107,11 @@ with tab_new:
                 help="問題發現來源",
             )
         with r1c3:
+            f_defcat = st.selectbox(
+                "異常類別 ⭐", [""] + DEFECT_CATEGORY_OPTIONS,
+                help="不良品異常分類",
+            )
+        with r1c4:
             f_model  = st.text_input("機種", placeholder="e.g. GPS / PJ2+GPS")
 
         r2c1, r2c2, r2c3 = st.columns(3)
@@ -141,9 +164,9 @@ with tab_new:
         with rc3:
             f_audit  = st.text_input("廠商稽核", placeholder="稽核紀錄或結果")
 
-        f_photo = st.text_input(
-            "照片連結（Google Drive URL）",
-            placeholder="請先上傳至 Google Drive，再貼入分享連結",
+        f_photo_url = st.text_input(
+            "照片連結（選填，若已在上方上傳則不需填寫）",
+            placeholder="或直接貼入 Google Drive 分享連結",
         )
 
         submitted = st.form_submit_button(
@@ -160,6 +183,20 @@ with tab_new:
         if err:
             st.error(f"❌ 以下必填欄位尚未填寫：**{'、'.join(err)}**")
         else:
+            # ── 處理照片 ──────────────────────────────
+            photo_url = f_photo_url.strip()
+            if uploaded_photo and not photo_url:
+                with st.spinner("📤 上傳照片至 Google Drive…"):
+                    try:
+                        photo_url = upload_photo_to_drive(
+                            file_bytes=uploaded_photo.read(),
+                            filename=uploaded_photo.name,
+                            mime_type=uploaded_photo.type or "image/jpeg",
+                        )
+                        st.toast(f"📷 照片已上傳：{uploaded_photo.name}", icon="✅")
+                    except Exception as e:
+                        st.warning(f"⚠️ 照片上傳失敗（{e}），記錄仍正常儲存。")
+
             try:
                 rec_id = append_sqm_defect({
                     "發生日期":             f_date.strftime("%Y/%m/%d"),
@@ -178,9 +215,10 @@ with tab_new:
                     "完成日期":             f_due.strftime("%Y/%m/%d") if f_due else "",
                     "負責人":               f_owner.strip(),
                     "狀態":                 f_status,
-                    "照片":                 f_photo.strip(),
+                    "照片":                 photo_url,
                     "廠商稽核":             f_audit.strip(),
                     "處理狀態":             "待處理",
+                    "異常類別":             f_defcat,
                 })
                 st.success(f"✅ 新增成功！記錄編號：**{rec_id}**")
                 st.cache_data.clear()
@@ -204,7 +242,7 @@ with tab_query:
     df = _load()
 
     # ── 篩選列 ────────────────────────────────────────
-    fc1, fc2, fc3, fc4, fc5 = st.columns(5)
+    fc1, fc2, fc3, fc4, fc5, fc6 = st.columns(6)
     with fc1:
         vendors = ["全部"] + sorted(df["廠商"].dropna().unique().tolist()) if not df.empty else ["全部"]
         fv = st.selectbox("廠商", vendors, key="fq_vendor")
@@ -218,6 +256,9 @@ with tab_query:
         sources = ["全部"] + SOURCE_OPTIONS
         fsr = st.selectbox("來源", sources, key="fq_source")
     with fc5:
+        defcats = ["全部"] + DEFECT_CATEGORY_OPTIONS
+        fdc = st.selectbox("異常類別", defcats, key="fq_defcat")
+    with fc6:
         kw = st.text_input("🔍 關鍵字", placeholder="廠商/零件/問題點")
 
     fd1, fd2 = st.columns(2)
@@ -235,6 +276,8 @@ with tab_query:
         if fm  != "全部": dff = dff[dff["機種"] == fm]
         if fs  != "全部": dff = dff[dff["狀態"] == fs]
         if fsr != "全部": dff = dff[dff["來源"] == fsr]
+        if fdc != "全部" and "異常類別" in dff.columns:
+            dff = dff[dff["異常類別"] == fdc]
         if kw:
             mask = dff.apply(lambda r: kw in " ".join(r.astype(str)), axis=1)
             dff  = dff[mask]
@@ -262,7 +305,7 @@ with tab_query:
 
         # ── 資料表 ────────────────────────────────────
         show_cols = [c for c in [
-            "記錄編號", "發生日期", "來源", "機種", "零件名稱",
+            "記錄編號", "發生日期", "來源", "異常類別", "機種", "零件名稱",
             "零件編號（單據號碼）", "廠商", "不良數",
             "P問題點", "負責人", "狀態", "SCAR編號",
         ] if c in dff.columns]
@@ -300,6 +343,7 @@ with tab_query:
                     with dc1:
                         st.markdown(f"**發生日期：** {row.get('發生日期','')}")
                         st.markdown(f"**來源：** {row.get('來源','')}")
+                        st.markdown(f"**異常類別：** {row.get('異常類別','─') or '─'}")
                         st.markdown(f"**機種：** {row.get('機種','')}")
                         st.markdown(f"**零件名稱：** {row.get('零件名稱','')}")
                         st.markdown(f"**零件編號：** {row.get('零件編號（單據號碼）','')}")
@@ -311,10 +355,17 @@ with tab_query:
                         st.markdown(f"**責任歸屬：** {row.get('責任歸屬','')}")
                         st.markdown(f"**狀態：** {stat}")
                         st.markdown(f"**SCAR 編號：** {row.get('SCAR編號','─') or '─'}")
-                        if row.get("照片"):
-                            st.markdown(f"[📷 查看照片]({row.get('照片')})")
                         if row.get("廠商稽核"):
                             st.markdown(f"**廠商稽核：** {row.get('廠商稽核')}")
+                        # 照片預覽
+                        photo_val = row.get("照片", "")
+                        if photo_val:
+                            st.markdown(f"[📷 查看照片]({photo_val})")
+                            # 嘗試直接顯示（Google Drive 直連格式）
+                            if "drive.google.com/file/d/" in photo_val:
+                                fid = photo_val.split("/file/d/")[1].split("/")[0]
+                                thumb = f"https://drive.google.com/thumbnail?id={fid}&sz=w400"
+                                st.image(thumb, width=280, caption="不良品照片")
 
                     st.markdown("---")
                     for label, key in [
