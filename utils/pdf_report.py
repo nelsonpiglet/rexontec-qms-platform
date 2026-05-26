@@ -3,7 +3,7 @@ REXONTEC OQC — PDF 報告生成
 依賴：reportlab >= 4.1  (pip install reportlab)
 中文字型：Windows 微軟正黑體 (msjh.ttc)，自動回退至標楷體
 """
-import io, os
+import io, os, glob
 from datetime import datetime
 
 # ── reportlab 匯入 ─────────────────────────────────────
@@ -43,55 +43,97 @@ _fonts_registered = False
 _F  = "MJH"       # regular
 _FB = "MJH-B"     # bold
 
-_FONT_CANDIDATES = [
-    # (path, subfont_index_regular, subfont_index_bold)
-    ("C:/Windows/Fonts/msjh.ttc",   0, 1),   # 微軟正黑體
-    ("C:/Windows/Fonts/msjhbd.ttc", 0, 0),   # 微軟正黑體 Bold (fallback for bold)
-    ("C:/Windows/Fonts/kaiu.ttf",   None, None),  # 標楷體
-    ("C:/Windows/Fonts/mingliu.ttc",0, 0),   # 細明體
-    ("C:/Windows/Fonts/simsun.ttc", 0, 0),   # 宋體
+# 固定路徑候選：(path, subfont_index_regular, subfont_index_bold)
+_FONT_CANDIDATES_FIXED = [
+    # ── Windows ──────────────────────────────────────
+    ("C:/Windows/Fonts/msjh.ttc",    0,    1),    # 微軟正黑體（Regular + Bold 各 index）
+    ("C:/Windows/Fonts/msjhbd.ttc",  0,    0),    # 微軟正黑體 Bold 獨立檔
+    ("C:/Windows/Fonts/kaiu.ttf",    None, None), # 標楷體
+    ("C:/Windows/Fonts/mingliu.ttc", 0,    0),    # 細明體
+    ("C:/Windows/Fonts/simsun.ttc",  0,    0),    # 宋體（簡體，最後備用）
+    # ── Linux / Streamlit Cloud (Ubuntu, fonts-noto-cjk) ────────────────
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",  0, 0),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf", None, None),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf", None, None),
+    ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",       0, 0),
+    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  0, 0),
+    ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf",            None, None),
+    ("/usr/share/fonts/truetype/arphic/uming.ttc",              0, 0),
+    ("/usr/share/fonts/truetype/arphic/ukai.ttc",               0, 0),
+    # ── macOS ─────────────────────────────────────────
+    ("/System/Library/Fonts/PingFang.ttc",                       0, 0),
+    ("/Library/Fonts/Arial Unicode MS.ttf",                      None, None),
+    ("/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",  None, None),
 ]
+
 
 def _reg_fonts():
     global _fonts_registered, _F, _FB
     if _fonts_registered or not _RL_OK:
         return
 
-    for path, ri, bi in _FONT_CANDIDATES:
+    # 動態掃描 Linux 系統字型（glob，處理版本差異）
+    dynamic = []
+    for pattern in [
+        "/usr/share/fonts/**/*[Nn]oto*CJK*Regular*.ttc",
+        "/usr/share/fonts/**/*[Nn]oto*CJK*Regular*.otf",
+        "/usr/share/fonts/**/*[Nn]oto*CJK*.ttc",
+        "/usr/share/fonts/**/*wqy*.ttf",
+        "/usr/share/fonts/**/*arphic*.ttc",
+    ]:
+        for found in glob.glob(pattern, recursive=True):
+            dynamic.append((found, 0, 0))
+
+    all_candidates = _FONT_CANDIDATES_FIXED + dynamic
+
+    for path, ri, bi in all_candidates:
         if not os.path.exists(path):
             continue
         try:
-            # Regular
+            # ── Regular 字型 ───────────────────────
             if ri is not None:
                 pdfmetrics.registerFont(TTFont(_F, path, subfontIndex=ri))
             else:
                 pdfmetrics.registerFont(TTFont(_F, path))
 
-            # Bold — try same file with bold index, fallback to same as regular
-            bold_path = path
-            if path.endswith("msjh.ttc"):
+            # ── Bold 字型（多重備援策略）──────────
+            # 策略 1：msjh.ttc + msjhbd.ttc 特例
+            if "msjh.ttc" in path.lower() and not "msjhbd" in path.lower():
                 bold_alt = "C:/Windows/Fonts/msjhbd.ttc"
                 if os.path.exists(bold_alt):
-                    bold_path = bold_alt
-                    pdfmetrics.registerFont(TTFont(_FB, bold_path, subfontIndex=0))
-                else:
-                    # Use index 1 of same file (bold variant)
+                    pdfmetrics.registerFont(TTFont(_FB, bold_alt, subfontIndex=0))
+                    _fonts_registered = True
+                    return
+                # 策略 2：同檔案 index 1（msjh.ttc 的 Bold variant）
+                for try_idx in (1, 0):
                     try:
-                        pdfmetrics.registerFont(TTFont(_FB, path, subfontIndex=1))
+                        pdfmetrics.registerFont(TTFont(_FB, path, subfontIndex=try_idx))
+                        _fonts_registered = True
+                        return
                     except Exception:
-                        pdfmetrics.registerFont(TTFont(_FB, path, subfontIndex=0))
+                        continue
             else:
-                idx = bi if bi is not None else (ri if ri is not None else 0)
-                pdfmetrics.registerFont(TTFont(_FB, bold_path, subfontIndex=idx))
+                # 策略 3：使用 bi 指定 index，回退 0
+                bold_idx = bi if bi is not None else (ri if ri is not None else 0)
+                for try_idx in (bold_idx, 0):
+                    try:
+                        if try_idx is not None:
+                            pdfmetrics.registerFont(TTFont(_FB, path, subfontIndex=try_idx))
+                        else:
+                            pdfmetrics.registerFont(TTFont(_FB, path))
+                        _fonts_registered = True
+                        return
+                    except Exception:
+                        continue
 
-            _fonts_registered = True
-            return
         except Exception:
-            continue
+            continue   # 此候選路徑失敗，試下一個
 
     raise RuntimeError(
-        "找不到中文字型！請確認 Windows 字型資料夾有 msjh.ttc / kaiu.ttf。\n"
-        "或執行：pip install reportlab 並重啟系統。"
+        "找不到中文字型！\n"
+        "• 本機 Windows：確認 C:/Windows/Fonts/ 有 msjh.ttc 或 kaiu.ttf\n"
+        "• Streamlit Cloud：確認 packages.txt 含 fonts-noto-cjk 並重新部署\n"
+        "• 執行：pip install reportlab 並重啟"
     )
 
 
