@@ -97,16 +97,19 @@ def _open_sheet(sheet_name: str, columns: list):
 
 
 def _ensure_headers(ws, columns: list):
-    """確保工作表第一列為正確標題，欄數不足時先擴欄再補欄位名稱。"""
+    """確保工作表第一列為正確標題，欄數不足時先擴欄再補欄位名稱。
+    使用完整欄位比對，任何欄位名稱不符時一次批次更新整列標題。
+    """
     # 先確保欄數足夠，避免 exceeds grid limits 錯誤
     if ws.col_count < len(columns):
         ws.resize(cols=len(columns) + 2)
     first = ws.row_values(1)
-    if not first or first[0] != columns[0]:
+    # 完整比對所有欄位名稱（非僅第一欄），確保欄位改版後正確更新
+    if not first:
         ws.insert_row(columns, 1)
-    elif len(first) < len(columns):
-        for i in range(len(first), len(columns)):
-            ws.update_cell(1, i + 1, columns[i])
+    elif list(first[:len(columns)]) != list(columns):
+        # 一次批次更新整列標題，覆蓋舊名稱
+        ws.update("A1", [columns])
 
 
 def _gen_id(ws, prefix: str) -> str:
