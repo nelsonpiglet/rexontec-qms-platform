@@ -22,7 +22,7 @@ require_login()
 user_info_bar()
 
 # ── 平台導覽列 ──────────────────────────────────────
-n1, n2, n3, n4, n5, n6, n7, n8 = st.columns([1, 1, 1, 1, 1, 1, 1, 2])
+n1, n2, n3, n4, n5, n6, n7, n8, n9 = st.columns([1, 1, 1, 1, 1, 1, 1, 1, 2])
 with n1:
     if st.button("🔬 檢驗品質", use_container_width=True):
         st.switch_page("pages/01_出廠檢驗輸入.py")
@@ -42,6 +42,9 @@ with n6:
     if st.button("🏭 SQM 供應商", use_container_width=True):
         st.switch_page("pages/40_🏭_SQM異常登錄.py")
 with n7:
+    if st.button("📥 文件匯入", use_container_width=True):
+        st.switch_page("pages/50_📥_文件匯入中心.py")
+with n8:
     if st.button("⚙️ 系統設定", use_container_width=True):
         st.switch_page("pages/03_系統設定.py")
 
@@ -297,10 +300,13 @@ with c4:
         st.switch_page("pages/40_🏭_SQM異常登錄.py")
 
 with c5:
-    st.markdown(_reserved_card(
-        "📉", "SPC 統計製程控制",
-        "製程能力分析 · 管制圖<br>CPK / PPK · 製程穩定監控",
+    st.markdown(_active_card(
+        "📥", "文件自動匯入中心",
+        "Excel 批次匯入 IQC 異常<br>欄位智能對應 · 資料驗證 · 一鍵建案",
+        "#00838f",
     ), unsafe_allow_html=True)
+    if st.button("進入文件匯入中心 →", key="go_import", use_container_width=True):
+        st.switch_page("pages/50_📥_文件匯入中心.py")
 
 with c6:
     st.markdown(_reserved_card(

@@ -29,7 +29,7 @@ require_login()
 user_info_bar()
 
 # ── 導覽列 ────────────────────────────────────────────
-n1,n2,n3,n4,n5,n6,n7 = st.columns([1,1,1,1,1,1,2])
+n1,n2,n3,n4,n5,n6,n7,n8 = st.columns([1,1,1,1,1,1,1,2])
 with n1:
     if st.button("🏠 指揮平台",  use_container_width=True): st.switch_page("app.py")
 with n2:
@@ -41,6 +41,8 @@ with n4:
 with n5:
     if st.button("📊 SQM 儀表板",use_container_width=True): st.switch_page("pages/42_📊_SQM儀表板.py")
 with n6:
+    if st.button("📥 文件匯入",  use_container_width=True): st.switch_page("pages/50_📥_文件匯入中心.py")
+with n7:
     if st.button("⚙️ 系統設定",  use_container_width=True): st.switch_page("pages/03_系統設定.py")
 
 st.markdown(page_header(
