@@ -57,6 +57,12 @@ def generate_iqc_pdf(part: dict, header: dict, results: dict) -> bytes:
 
     _reg_fonts()
 
+    # _reg_fonts() 可能已將 pdf_report._F/_FB 更新為 CID 字型名稱（備援路徑）
+    # 必須重新讀取，確保 closure S()/SB() 使用正確的字型名
+    import utils.pdf_report as _pr
+    _F  = _pr._F
+    _FB = _pr._FB
+
     # ── 頁面尺寸（A4 縱向）────────────────────────────
     W, H = A4
     LM = RM = 14 * mm

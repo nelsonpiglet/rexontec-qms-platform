@@ -129,11 +129,36 @@ def _reg_fonts():
         except Exception:
             continue   # 此候選路徑失敗，試下一個
 
+    # ── 終極備援：PDF 內建 CID 字型（不需任何系統字型檔案）──────────────────
+    # UnicodeCIDFont 是 PDF 標準字型，由 reportlab 內建支援，
+    # 無需安裝系統字型即可渲染中文（正體/簡體/日文），
+    # PDF 閱覽器（Adobe / Chrome / Edge）均內建對應字型。
+    try:
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        _CID_CANDIDATES = [
+            "MSung-Light",    # 正體中文（台灣）
+            "MHei-Medium",    # 正體中文（香港）
+            "STSong-Light",   # 簡體中文
+        ]
+        for cid_name in _CID_CANDIDATES:
+            try:
+                pdfmetrics.registerFont(UnicodeCIDFont(cid_name))
+                # 同名重複 register 無害；_F/_FB 也指向同一 CID 字型
+                # （CID 字型無獨立 Bold，以同字型替代）
+                _F  = cid_name
+                _FB = cid_name
+                _fonts_registered = True
+                return
+            except Exception:
+                continue
+    except ImportError:
+        pass
+
     raise RuntimeError(
         "找不到中文字型！\n"
         "• 本機 Windows：確認 C:/Windows/Fonts/ 有 msjh.ttc 或 kaiu.ttf\n"
         "• Streamlit Cloud：確認 packages.txt 含 fonts-noto-cjk 並重新部署\n"
-        "• 執行：pip install reportlab 並重啟"
+        "• 最後備援：pip install reportlab 並重啟後再試"
     )
 
 
