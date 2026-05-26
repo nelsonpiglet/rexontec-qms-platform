@@ -6,11 +6,127 @@ REXONTEC 力科 IQC — 進料品質管制檢驗表
 import streamlit as st
 import streamlit.components.v1 as components
 import json
-from datetime import date
+import pandas as pd
+from datetime import date, datetime, timedelta
 
 from utils.style import QMS_CSS, topbar, page_header
 from utils.auth import require_login, user_info_bar
 from utils.iqc_data import get_parts, get_all_items_flat
+
+
+# ═══════════════════════════════════════════════════════
+# 風險零件看板 — 資料載入與計算
+# ═══════════════════════════════════════════════════════
+@st.cache_data(ttl=300, show_spinner=False)
+def _load_sqm_for_risk() -> pd.DataFrame:
+    """從 SQM 異常登錄讀取資料（快取5分鐘）"""
+    try:
+        from utils.gsheet import load_sqm_defects
+        return load_sqm_defects()
+    except Exception:
+        return pd.DataFrame()
+
+
+def _calc_risk(df_sqm: pd.DataFrame, days: int = 90) -> dict:
+    """
+    按「零件名稱」彙整近 N 天內的異常次數與風險等級。
+    回傳 dict: {零件名稱: {count, level, vendors, last_date, suggestions, issues, history}}
+    """
+    if df_sqm.empty:
+        return {}
+
+    cutoff = datetime.now() - timedelta(days=days)
+    df = df_sqm.copy()
+    df["_dt"] = pd.to_datetime(df.get("發生日期", pd.Series(dtype=str)), errors="coerce")
+
+    result: dict = {}
+    part_col = "零件名稱"
+    if part_col not in df.columns:
+        return {}
+
+    # 全部歷史
+    all_hist = df[df[part_col].str.strip().ne("") if df[part_col].dtype == object else df[part_col].notna()]
+    hist_by_part = {k: v.to_dict("records") for k, v in all_hist.groupby(part_col)}
+
+    # 近90天
+    df_rec = df[df["_dt"] >= cutoff].copy()
+    for pname, grp in df_rec.groupby(part_col):
+        pname = str(pname).strip()
+        if not pname:
+            continue
+        cnt = len(grp)
+        level = "high" if cnt >= 3 else ("warn" if cnt >= 1 else "ok")
+        vendors = grp["廠商"].dropna().value_counts().index.tolist()[:3] if "廠商" in grp.columns else []
+        last_dt = grp["_dt"].max()
+        last_date = last_dt.strftime("%Y/%m/%d") if pd.notna(last_dt) else "─"
+
+        # 建議
+        cats = (grp["異常類別"].dropna().unique().tolist()
+                if "異常類別" in grp.columns else [])
+        suggestions = _risk_suggestions(cats)
+
+        # 最近3筆問題描述
+        issues = grp["P問題點"].dropna().tolist()[:3] if "P問題點" in grp.columns else []
+
+        result[pname] = {
+            "count":       cnt,
+            "level":       level,
+            "vendors":     vendors,
+            "last_date":   last_date,
+            "suggestions": suggestions,
+            "issues":      issues,
+            "history":     hist_by_part.get(pname, []),
+        }
+    return result
+
+
+def _risk_suggestions(cats: list) -> list:
+    """根據異常類別清單生成檢驗建議"""
+    cat_map = {
+        "外觀": "👁️ 加強外觀目視檢查（燈光/角度/白色背板）",
+        "尺寸": "📏 注意尺寸量測，確認公差符合圖面",
+        "功能": "⚡ 加嚴功能測試抽驗比例",
+        "包裝": "📦 確認包裝完整性，防靜電與緩衝",
+        "組裝": "🔧 注意組裝精度與配合度",
+        "材料": "🔬 確認材質證書、硬度與RoHS",
+        "製程": "🏭 提高抽驗比例，查核製程管制能力",
+    }
+    tips = [cat_map[c] for c in cats if c in cat_map]
+    if not tips:
+        tips = ["📋 依標準 SIP 進行全項目檢驗"]
+    return tips
+
+
+def _risk_badge(level: str) -> tuple[str, str, str]:
+    """回傳 (emoji, 文字, 顏色)"""
+    if level == "high":
+        return "🔴", "高風險", "#c0392b"
+    if level == "warn":
+        return "🟡", "注意",   "#d68910"
+    return "🟢", "正常", "#1e8449"
+
+
+def _match_part_risk(part: dict, risk_map: dict) -> dict | None:
+    """嘗試將 IQC 零件與 SQM 風險資料比對（名稱 substring 或料號）"""
+    if not risk_map:
+        return None
+    pname = part.get("name", "").strip()
+    ppn   = part.get("pn",   "").strip()
+
+    # 1. 完全匹配零件名稱
+    if pname in risk_map:
+        return risk_map[pname]
+    # 2. 料號匹配（SQM 零件編號含料號）
+    for k, v in risk_map.items():
+        for rec in v.get("history", []):
+            pno = str(rec.get("零件編號（單據號碼）", "")).strip()
+            if ppn and ppn in pno:
+                return v
+    # 3. 部分名稱匹配
+    for k, v in risk_map.items():
+        if pname and (pname in k or k in pname):
+            return v
+    return None
 
 # ── 頁面設定 ─────────────────────────────────────────
 st.set_page_config(
@@ -146,6 +262,10 @@ def set_iqc_remark(item_id, text):
         st.session_state.iqc_results[item_id] = {"result": None, "inputs": {}, "remark": ""}
     st.session_state.iqc_results[item_id]["remark"] = text
 
+# ── 預先載入 SQM 風險資料（供左右兩側共用）───────────
+df_sqm_risk = _load_sqm_for_risk()
+risk_map    = _calc_risk(df_sqm_risk)          # {零件名稱: {...}}
+
 # ════════════════════════════════════════════════════
 # 左側：零件選擇
 # ════════════════════════════════════════════════════
@@ -182,11 +302,27 @@ with left_col:
                 border    = "2px solid var(--accent)" if is_active else "1px solid var(--border)"
                 bg        = "#eef5ff" if is_active else "#fff"
 
+                # 風險指示
+                p_risk = _match_part_risk(p, risk_map)
+                if p_risk:
+                    _em, _lbl, _clr = _risk_badge(p_risk["level"])
+                    _risk_hint = (
+                        f'<div style="font-size:9px;margin:-4px 0 3px 2px;'
+                        f'color:{_clr};font-weight:700">'
+                        f'{_em} {_lbl}｜{p_risk["count"]}次/90天</div>'
+                    )
+                else:
+                    _risk_hint = (
+                        '<div style="font-size:9px;margin:-4px 0 3px 2px;'
+                        'color:#1e8449;font-weight:700">🟢 正常</div>'
+                    )
+
                 clicked = st.button(
                     f"{p.get('icon','📦')}  {p['name']}\n{p['pn']}",
                     key=f"part_btn_{p['id']}",
                     use_container_width=True,
                 )
+                st.markdown(_risk_hint, unsafe_allow_html=True)
                 if clicked:
                     if st.session_state.iqc_part_id != p["id"]:
                         st.session_state.iqc_part_id = p["id"]
@@ -198,20 +334,241 @@ with left_col:
 # ════════════════════════════════════════════════════
 with right_col:
     if not st.session_state.iqc_part_id:
-        st.markdown("""
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-                    min-height:55vh;gap:14px;text-align:center">
-          <div style="font-size:52px;opacity:.3">🔬</div>
-          <div style="font-size:17px;font-weight:700;color:var(--muted)">選擇左側零件開始檢驗</div>
-          <div style="font-size:12.5px;color:var(--dim)">從左側選取零件，系統自動載入 SIP 檢驗項目</div>
-        </div>
-        """, unsafe_allow_html=True)
+        # ══════════════════════════════════════════════
+        # 風險零件看板（未選取零件時顯示）
+        # ══════════════════════════════════════════════
+        n_high = sum(1 for v in risk_map.values() if v["level"] == "high")
+        n_warn = sum(1 for v in risk_map.values() if v["level"] == "warn")
+
+        st.markdown(f"""
+<div style="background:linear-gradient(135deg,var(--navy) 0%,#1a3a5c 100%);
+            border-radius:10px;padding:18px 24px;margin-bottom:16px;
+            box-shadow:0 4px 16px rgba(13,27,42,.18)">
+  <div style="font-size:10px;color:rgba(255,255,255,.5);letter-spacing:2px;
+              text-transform:uppercase;margin-bottom:4px">SQM 異常資料 · 近 90 天</div>
+  <div style="font-size:20px;font-weight:900;color:#fff;margin-bottom:12px">
+    🚨 IQC 風險零件看板
+  </div>
+  <div style="display:flex;gap:16px">
+    <div style="background:rgba(192,57,43,.25);border:1px solid rgba(192,57,43,.5);
+                border-radius:8px;padding:8px 20px;text-align:center">
+      <div style="font-size:24px;font-weight:900;color:#e74c3c;
+                  font-family:'DM Mono',monospace">{n_high}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.6);letter-spacing:1px">🔴 高風險</div>
+    </div>
+    <div style="background:rgba(214,137,16,.2);border:1px solid rgba(214,137,16,.45);
+                border-radius:8px;padding:8px 20px;text-align:center">
+      <div style="font-size:24px;font-weight:900;color:#f39c12;
+                  font-family:'DM Mono',monospace">{n_warn}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.6);letter-spacing:1px">🟡 注意</div>
+    </div>
+    <div style="background:rgba(30,132,73,.2);border:1px solid rgba(30,132,73,.4);
+                border-radius:8px;padding:8px 20px;text-align:center">
+      <div style="font-size:24px;font-weight:900;color:#2ecc71;
+                  font-family:'DM Mono',monospace">{len(risk_map)-n_high-n_warn}</div>
+      <div style="font-size:10px;color:rgba(255,255,255,.6);letter-spacing:1px">🟢 正常</div>
+    </div>
+    <div style="margin-left:auto;display:flex;align-items:center">
+      <div style="font-size:10px;color:rgba(255,255,255,.4)">
+        資料來源：SQM_異常登錄<br>點選左側零件 → 開始檢驗
+      </div>
+    </div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+        if not risk_map:
+            st.info("📊 SQM 尚無異常資料，或資料讀取中。系統將在 5 分鐘內自動更新。")
+        else:
+            # ── 依風險等級排序顯示 ────────────────────
+            sorted_risks = sorted(
+                risk_map.items(),
+                key=lambda x: {"high": 0, "warn": 1, "ok": 2}[x[1]["level"]]
+            )
+
+            for pname, rdata in sorted_risks:
+                em, lbl, clr = _risk_badge(rdata["level"])
+                vendors_str  = "、".join(rdata["vendors"]) or "─"
+                issues_short = rdata["issues"][0][:40] + "…" if rdata["issues"] else "─"
+
+                # 卡片容器
+                with st.expander(
+                    f"{em} **{pname}**　｜　{lbl}　｜　近90天 {rdata['count']} 次異常　｜　{vendors_str}",
+                    expanded=(rdata["level"] == "high"),
+                ):
+                    # 上方摘要欄
+                    ca, cb, cc, cd = st.columns(4)
+                    ca.metric("異常次數（90天）", f"{rdata['count']} 次")
+                    cb.metric("最近異常日期", rdata["last_date"])
+                    cc.metric("涉及廠商", vendors_str[:18])
+                    cd.metric("風險等級", lbl)
+
+                    st.markdown("---")
+
+                    # 最近問題描述
+                    if rdata["issues"]:
+                        st.markdown(
+                            '<div style="font-size:11px;font-weight:700;color:var(--navy);'
+                            'margin-bottom:6px">📋 最近異常描述</div>',
+                            unsafe_allow_html=True,
+                        )
+                        for i, iss in enumerate(rdata["issues"], 1):
+                            st.markdown(
+                                f'<div style="background:#fff8f7;border-left:3px solid {clr};'
+                                f'padding:6px 10px;border-radius:0 4px 4px 0;'
+                                f'font-size:12px;margin-bottom:4px">'
+                                f'<b>#{i}</b> {iss}</div>',
+                                unsafe_allow_html=True,
+                            )
+
+                    # 建議檢查重點
+                    st.markdown(
+                        '<div style="font-size:11px;font-weight:700;color:var(--navy);'
+                        'margin:10px 0 6px">🎯 建議檢查重點</div>',
+                        unsafe_allow_html=True,
+                    )
+                    for tip in rdata["suggestions"]:
+                        st.markdown(
+                            f'<div style="background:#f0f4ff;border-left:3px solid #3498db;'
+                            f'padding:5px 10px;border-radius:0 4px 4px 0;'
+                            f'font-size:12px;margin-bottom:4px">{tip}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+                    # 歷史異常紀錄（全部）
+                    if rdata["history"]:
+                        st.markdown(
+                            f'<div style="font-size:11px;font-weight:700;color:var(--navy);'
+                            f'margin:10px 0 6px">📂 歷史異常紀錄（共 {len(rdata["history"])} 筆）</div>',
+                            unsafe_allow_html=True,
+                        )
+                        hist_rows = []
+                        for rec in rdata["history"]:
+                            hist_rows.append({
+                                "發生日期": rec.get("發生日期", ""),
+                                "廠商":     rec.get("廠商", ""),
+                                "異常類別": rec.get("異常類別", ""),
+                                "不良數":   rec.get("不良數", ""),
+                                "P問題點":  str(rec.get("P問題點", ""))[:50],
+                                "狀態":     rec.get("狀態", ""),
+                                "記錄編號": rec.get("記錄編號", ""),
+                            })
+                        import pandas as _pd
+                        st.dataframe(
+                            _pd.DataFrame(hist_rows),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=min(300, 35 * len(hist_rows) + 40),
+                        )
+
+                    # 照片預留
+                    st.markdown(
+                        '<div style="background:#f8f9fa;border:1px dashed #ccc;'
+                        'border-radius:6px;padding:12px;text-align:center;'
+                        'font-size:11px;color:#aaa;margin-top:8px">'
+                        '📷 異常照片（預留 — 上傳照片後此處自動顯示）</div>',
+                        unsafe_allow_html=True,
+                    )
+
         st.stop()
 
     part = parts_by_id.get(st.session_state.iqc_part_id)
     if not part:
         st.warning("零件資料不存在，請重新選取")
         st.stop()
+
+    # ══════════════════════════════════════════════
+    # 零件病歷卡（選取零件後顯示於頂端）
+    # ══════════════════════════════════════════════
+    p_risk = _match_part_risk(part, risk_map)
+    if p_risk:
+        em, lbl, clr = _risk_badge(p_risk["level"])
+        _card_bg = {"high": "#fff8f7", "warn": "#fffbf0", "ok": "#f0fdf4"}[p_risk["level"]]
+        _border  = {"high": "#e74c3c", "warn": "#f39c12", "ok": "#27ae60"}[p_risk["level"]]
+        with st.expander(
+            f"{em} 零件病歷卡｜{part['name']}  ── {lbl}，近90天 {p_risk['count']} 次異常",
+            expanded=(p_risk["level"] in ("high", "warn")),
+        ):
+            mc1, mc2, mc3, mc4 = st.columns(4)
+            mc1.metric("異常次數（90天）", f"{p_risk['count']} 次",
+                       delta=("⚠️ 需加嚴" if p_risk["level"] == "high" else None),
+                       delta_color="inverse")
+            mc2.metric("最近異常日期", p_risk["last_date"])
+            mc3.metric("涉及廠商", "、".join(p_risk["vendors"])[:16] or "─")
+            mc4.metric("風險等級", lbl)
+
+            st.markdown("---")
+            tip_col, iss_col = st.columns(2)
+
+            with tip_col:
+                st.markdown(
+                    '<div style="font-size:11px;font-weight:700;color:var(--navy);'
+                    'margin-bottom:6px">🎯 本次檢驗重點建議</div>',
+                    unsafe_allow_html=True,
+                )
+                for tip in p_risk["suggestions"]:
+                    st.markdown(
+                        f'<div style="background:#f0f4ff;border-left:3px solid #3498db;'
+                        f'padding:5px 10px;border-radius:0 4px 4px 0;'
+                        f'font-size:12px;margin-bottom:4px">{tip}</div>',
+                        unsafe_allow_html=True,
+                    )
+
+            with iss_col:
+                st.markdown(
+                    '<div style="font-size:11px;font-weight:700;color:var(--navy);'
+                    'margin-bottom:6px">📋 最近異常描述</div>',
+                    unsafe_allow_html=True,
+                )
+                if p_risk["issues"]:
+                    for i, iss in enumerate(p_risk["issues"], 1):
+                        st.markdown(
+                            f'<div style="background:{_card_bg};border-left:3px solid {_border};'
+                            f'padding:5px 10px;border-radius:0 4px 4px 0;'
+                            f'font-size:12px;margin-bottom:4px">'
+                            f'<b>#{i}</b> {iss}</div>',
+                            unsafe_allow_html=True,
+                        )
+                else:
+                    st.caption("無最近異常描述")
+
+            # 歷史異常紀錄
+            if p_risk["history"]:
+                st.markdown(
+                    f'<div style="font-size:11px;font-weight:700;color:var(--navy);'
+                    f'margin:8px 0 4px">📂 歷史異常紀錄（共 {len(p_risk["history"])} 筆）</div>',
+                    unsafe_allow_html=True,
+                )
+                hist_rows = [{
+                    "發生日期": r.get("發生日期", ""),
+                    "廠商":     r.get("廠商", ""),
+                    "異常類別": r.get("異常類別", ""),
+                    "不良數":   r.get("不良數", ""),
+                    "問題點":   str(r.get("P問題點", ""))[:45],
+                    "狀態":     r.get("狀態", ""),
+                } for r in p_risk["history"]]
+                st.dataframe(
+                    pd.DataFrame(hist_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(240, 35 * len(hist_rows) + 40),
+                )
+
+            # 照片預留
+            st.markdown(
+                '<div style="background:#f8f9fa;border:1px dashed #ccc;border-radius:6px;'
+                'padding:10px;text-align:center;font-size:11px;color:#aaa;margin-top:6px">'
+                '📷 異常照片（預留）</div>',
+                unsafe_allow_html=True,
+            )
+    else:
+        # 無 SQM 異常資料 → 顯示綠色正常卡
+        st.markdown(
+            f'<div style="background:#f0fdf4;border:1px solid #a8e6c0;border-radius:8px;'
+            f'padding:10px 16px;margin-bottom:8px;font-size:12px;color:#1e8449;">'
+            f'🟢 <b>{part["name"]}</b> — 近90天 SQM 無異常記錄，依標準 SIP 進行檢驗。</div>',
+            unsafe_allow_html=True,
+        )
 
     all_items = get_all_items_flat(part)
 
