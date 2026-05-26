@@ -156,6 +156,25 @@ def _coerce_num(val: str) -> str:
         return str(val).strip()
 
 
+def _detect_header_row(df_peek: pd.DataFrame) -> int:
+    """
+    自動偵測標題列位置（回傳 1-indexed 列號）。
+    策略：找「非空且不含時間戳」的儲存格最多的那列，最可能是欄位標題列。
+    通常：大標題合併列只有1格有值，欄位標題列有很多格有值。
+    """
+    import re
+    ts_pat = re.compile(r"\d{4}[-/]\d{1,2}[-/]\d{1,2}")
+    best_row, best_score = 0, -1
+    for i, row in df_peek.iterrows():
+        vals = [str(v).strip() for v in row if str(v).strip() and str(v).strip() != "nan"]
+        # 分數 = 非空且不像時間戳的格子數
+        score = sum(1 for v in vals if not ts_pat.search(v))
+        if score > best_score:
+            best_score = score
+            best_row = int(i)
+    return best_row + 1  # 轉為 1-indexed
+
+
 def _validate_df(df_mapped: pd.DataFrame) -> pd.DataFrame:
     """
     驗證對應後資料。回傳含 _errors 欄的 DataFrame；
@@ -368,20 +387,30 @@ with tab_excel:
                         use_container_width=True,
                     )
 
+                # 自動偵測標題列
+                auto_hdr = _detect_header_row(df_peek)
+
                 hdr_col, info_col = st.columns([1, 3])
                 with hdr_col:
                     header_row = st.number_input(
                         "📌 欄位標題在第幾列？",
-                        min_value=1, max_value=8, value=1, step=1,
-                        help="若 Excel 第一列是大標題（如「2026年IQC問題點病歷」），請填 2",
+                        min_value=1, max_value=8,
+                        value=auto_hdr,   # 自動偵測結果
+                        step=1,
+                        help="系統已自動偵測，若結果不對可手動調整",
                         key="header_row_sel",
                     )
                 with info_col:
-                    st.info(
-                        "**常見情況：**\n"
-                        "- 第1列直接是欄位名稱 → 填 **1**\n"
-                        "- 第1列是大標題合併列，第2列才是欄位名稱 → 填 **2**"
-                    )
+                    if auto_hdr == 1:
+                        st.success(
+                            f"✅ 自動偵測：第 **{auto_hdr}** 列為欄位標題列（直接開頭）"
+                        )
+                    else:
+                        st.warning(
+                            f"⚠️ 自動偵測：第 **{auto_hdr}** 列才是欄位標題列\n\n"
+                            f"（前 {auto_hdr-1} 列為大標題/合併列，已自動跳過）\n\n"
+                            "如果結果不對，請手動調整左方數字。"
+                        )
 
                 # ── 用正確的 header 重新讀取 ──────────────────
                 try:
