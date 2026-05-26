@@ -77,18 +77,30 @@ def get_client():
 
 
 def _open_sheet(sheet_name: str, columns: list):
-    """取得工作表，若不存在自動建立並寫入標題"""
+    """
+    取得工作表，若不存在自動建立並寫入標題。
+    若已存在但欄數不足（因欄位定義增加），自動擴欄。
+    """
     client = get_client()
     ss     = client.open_by_key(SPREADSHEET_ID)
     titles = [ws.title for ws in ss.worksheets()]
+    need_cols = len(columns) + 2          # 保留 2 欄緩衝
     if sheet_name not in titles:
-        ws = ss.add_worksheet(title=sheet_name, rows=2000, cols=len(columns) + 2)
+        ws = ss.add_worksheet(title=sheet_name, rows=2000, cols=need_cols)
         ws.insert_row(columns, 1)
         return ws
-    return ss.worksheet(sheet_name)
+    ws = ss.worksheet(sheet_name)
+    # 若現有欄數不足，自動擴展（不破壞既有資料）
+    if ws.col_count < len(columns):
+        ws.resize(cols=need_cols)
+    return ws
 
 
 def _ensure_headers(ws, columns: list):
+    """確保工作表第一列為正確標題，欄數不足時先擴欄再補欄位名稱。"""
+    # 先確保欄數足夠，避免 exceeds grid limits 錯誤
+    if ws.col_count < len(columns):
+        ws.resize(cols=len(columns) + 2)
     first = ws.row_values(1)
     if not first or first[0] != columns[0]:
         ws.insert_row(columns, 1)
