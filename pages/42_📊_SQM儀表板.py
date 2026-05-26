@@ -54,7 +54,7 @@ except ImportError:
     _PLOTLY = False
 
 # ── 資料載入 ──────────────────────────────────────────
-@st.cache_data(ttl=300, show_spinner="載入 SQM 資料中…")
+@st.cache_data(ttl=60, show_spinner="載入 SQM 資料中…")
 def _load():
     try:
         df = load_sqm_defects()
@@ -64,7 +64,7 @@ def _load():
     except Exception:
         return pd.DataFrame()
 
-@st.cache_data(ttl=300, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _load_scar():
     try:
         df = load_scars()
@@ -73,6 +73,15 @@ def _load_scar():
         return df
     except Exception:
         return pd.DataFrame()
+
+# 重新整理按鈕
+_rc1, _rc2 = st.columns([1, 7])
+with _rc1:
+    if st.button("🔄 重新整理", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+with _rc2:
+    st.caption("資料每 60 秒自動更新，或點擊「重新整理」即時載入最新資料。")
 
 df_all  = _load()
 df_scar = _load_scar()

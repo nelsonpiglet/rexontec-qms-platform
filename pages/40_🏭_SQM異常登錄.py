@@ -58,7 +58,7 @@ st.markdown(page_header(
 # ─────────────────────────────────────────────────────
 # 資料載入
 # ─────────────────────────────────────────────────────
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=60, show_spinner=False)
 def _load():
     return load_sqm_defects()
 
@@ -192,6 +192,15 @@ with tab_new:
 # Tab 2：異常記錄查詢
 # ═══════════════════════════════════════════════════════
 with tab_query:
+    # 重新整理按鈕（清除快取，確保顯示最新資料）
+    _rf_col, _info_col = st.columns([1, 5])
+    with _rf_col:
+        if st.button("🔄 重新整理", use_container_width=True):
+            st.cache_data.clear()
+            st.rerun()
+    with _info_col:
+        st.caption("資料每 60 秒自動更新，或點擊「重新整理」即時載入最新資料。")
+
     df = _load()
 
     # ── 篩選列 ────────────────────────────────────────

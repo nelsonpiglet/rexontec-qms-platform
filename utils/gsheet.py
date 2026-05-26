@@ -547,12 +547,26 @@ def append_sqm_defect(data: dict) -> str:
 
 
 def load_sqm_defects():
-    """讀取所有進料異常記錄，回傳 DataFrame"""
+    """讀取所有進料異常記錄，回傳 DataFrame。
+    改用 get_all_values() 位置式讀取，避免 Google Sheet 標題列名稱不符
+    導致 get_all_records() 回傳錯誤 key 的問題。
+    """
     import pandas as pd
     try:
-        ws      = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
-        records = ws.get_all_records()
-        return pd.DataFrame(records) if records else pd.DataFrame(columns=COLS_SQM_DEFECT)
+        ws       = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
+        # 同步修正標題列（讓 Google Sheet 顯示也正確）
+        _ensure_headers(ws, COLS_SQM_DEFECT)
+        all_vals = ws.get_all_values()
+        if len(all_vals) <= 1:          # 僅標題列或空白
+            return pd.DataFrame(columns=COLS_SQM_DEFECT)
+        n         = len(COLS_SQM_DEFECT)
+        data_rows = all_vals[1:]        # 跳過第一列（標題）
+        padded    = [r[:n] + [""] * max(0, n - len(r)) for r in data_rows]
+        df = pd.DataFrame(padded, columns=COLS_SQM_DEFECT)
+        # 過濾全空列
+        df = df[~df.apply(lambda r: r.str.strip().eq("").all(), axis=1)
+               ].reset_index(drop=True)
+        return df
     except Exception:
         return pd.DataFrame(columns=COLS_SQM_DEFECT)
 
