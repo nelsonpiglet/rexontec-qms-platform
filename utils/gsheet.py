@@ -428,24 +428,32 @@ def load_ipqc_records():
 # SQM 供應商品質管理 — 資料表欄位定義
 # ═══════════════════════════════════════════════════════
 COLS_SQM_DEFECT = [
-    "記錄編號",   # A
-    "建立時間",   # B
-    "日期",       # C
-    "供應商",     # D
-    "料號",       # E
-    "品名",       # F
-    "批號",       # G
-    "異常類別",   # H
-    "異常描述",   # I
-    "異常數量",   # J
-    "批量",       # K
-    "判定",       # L
-    "責任單位",   # M
-    "照片URL",    # N
-    "處理狀態",   # O
-    "SCAR編號",   # P
-    "建立人員",   # Q
-    "備註",       # R
+    "記錄編號",            # A  系統自動產生
+    "建立時間",            # B  系統自動產生
+    # ── 基本資訊（比照 IQC問題點病歷 Excel）──
+    "發生日期",            # C
+    "來源",                # D  e.g. 進料退貨 / 產線無效工時
+    "機種",                # E  e.g. GPS / PJ2+GPS
+    "零件名稱",            # F
+    "零件編號（單據號碼）",# G
+    "廠商",                # H
+    "不良數",              # I
+    # ── PDCA 分析 ──────────────────────────
+    "P問題點",             # J
+    "原因分析",            # K
+    "D改善對策",           # L
+    "C效果確認",           # M
+    "A標準化",             # N
+    # ── 管理欄位 ────────────────────────────
+    "責任歸屬",            # O
+    "完成日期",            # P
+    "負責人",              # Q
+    "狀態",                # R  處理中 / 結案 / 再發
+    "照片",                # S
+    "廠商稽核",            # T
+    # ── 系統連結 ────────────────────────────
+    "SCAR編號",            # U
+    "處理狀態",            # V  系統用：待處理/SCAR開立中/等待供應商回覆/已結案
 ]
 
 COLS_SQM_SCAR = [
@@ -482,8 +490,10 @@ COLS_SQM_SCAR = [
 def append_sqm_defect(data: dict) -> str:
     """
     新增一筆進料異常記錄至 SQM_異常登錄 工作表。
-    data keys: 日期, 供應商, 料號, 品名, 批號, 異常類別, 異常描述,
-               異常數量, 批量, 判定, 責任單位, 照片URL, 建立人員, 備註
+    data keys 比照 IQC問題點病歷 Excel 欄位：
+      發生日期, 來源, 機種, 零件名稱, 零件編號（單據號碼）, 廠商, 不良數,
+      P問題點, 原因分析, D改善對策, C效果確認, A標準化,
+      責任歸屬, 完成日期, 負責人, 狀態, 照片, 廠商稽核
     回傳: 記錄編號
     """
     ws = _open_sheet(SHEET_SQM_DEFECT, COLS_SQM_DEFECT)
@@ -496,22 +506,26 @@ def append_sqm_defect(data: dict) -> str:
 
     row = [
         rec_id,  now_str,
-        str(data.get("日期",   "")),
-        data.get("供應商",     ""),
-        data.get("料號",       ""),
-        data.get("品名",       ""),
-        data.get("批號",       ""),
-        data.get("異常類別",   ""),
-        data.get("異常描述",   ""),
-        data.get("異常數量",   0),
-        data.get("批量",       0),
-        data.get("判定",       ""),
-        data.get("責任單位",   ""),
-        data.get("照片URL",    ""),
-        data.get("處理狀態",   "待處理"),
-        "",   # SCAR編號（待開立）
-        data.get("建立人員",   ""),
-        data.get("備註",       ""),
+        str(data.get("發生日期",             "")),
+        data.get("來源",                     ""),
+        data.get("機種",                     ""),
+        data.get("零件名稱",                 ""),
+        data.get("零件編號（單據號碼）",     ""),
+        data.get("廠商",                     ""),
+        data.get("不良數",                   ""),
+        data.get("P問題點",                  ""),
+        data.get("原因分析",                 ""),
+        data.get("D改善對策",                ""),
+        data.get("C效果確認",                ""),
+        data.get("A標準化",                  ""),
+        data.get("責任歸屬",                 ""),
+        data.get("完成日期",                 ""),
+        data.get("負責人",                   ""),
+        data.get("狀態",                     "處理中"),
+        data.get("照片",                     ""),
+        data.get("廠商稽核",                 ""),
+        "",                                   # SCAR編號（待開立）
+        data.get("處理狀態",                 "待處理"),
     ]
     ws.append_row(row, value_input_option="USER_ENTERED")
     return rec_id

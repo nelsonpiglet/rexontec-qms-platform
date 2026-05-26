@@ -10,7 +10,7 @@ import pandas as pd
 import streamlit as st
 
 from utils.auth  import require_login, user_info_bar
-from utils.sqm   import DEFECT_CATEGORIES, JUDGMENT_OPTIONS, RESP_UNITS
+from utils.sqm   import SOURCE_OPTIONS, IQC_STATUS_OPTIONS, RESP_OPTIONS
 from utils.style import QMS_CSS, page_header, topbar
 
 # ── 頁面設定 ──────────────────────────────────────────
@@ -51,44 +51,51 @@ st.markdown(page_header(
 
 
 # ═══════════════════════════════════════════════════
-# QMS 目標欄位定義
+# QMS 目標欄位定義（完全比照 IQC問題點病歷 Excel 格式）
 # ═══════════════════════════════════════════════════
 QMS_FIELDS: dict[str, dict] = {
-    "日期":     {"required": True,  "type": "date",   "hint": "進料/檢驗日期"},
-    "供應商":   {"required": True,  "type": "str",    "hint": "供應商名稱"},
-    "料號":     {"required": True,  "type": "str",    "hint": "物料料號"},
-    "品名":     {"required": False, "type": "str",    "hint": "物料品名"},
-    "批號":     {"required": False, "type": "str",    "hint": "批次號碼"},
-    "批量":     {"required": False, "type": "num",    "hint": "本批總數量（整數）"},
-    "異常數量": {"required": True,  "type": "num",    "hint": "不良品數量（整數）"},
-    "異常類別": {"required": True,  "type": "option", "hint": f"限定值：{'、'.join(DEFECT_CATEGORIES)}",
-                 "options": DEFECT_CATEGORIES},
-    "異常描述": {"required": True,  "type": "str",    "hint": "異常現象詳細描述"},
-    "判定":     {"required": True,  "type": "option", "hint": f"限定值：{'、'.join(JUDGMENT_OPTIONS)}",
-                 "options": JUDGMENT_OPTIONS},
-    "責任單位": {"required": True,  "type": "option", "hint": f"限定值：{'、'.join(RESP_UNITS)}",
-                 "options": RESP_UNITS},
-    "建立人員": {"required": False, "type": "str",    "hint": "檢驗員姓名"},
-    "備註":     {"required": False, "type": "str",    "hint": "補充說明"},
+    "發生日期":             {"required": True,  "type": "date", "hint": "問題發生日期"},
+    "來源":                 {"required": False, "type": "str",  "hint": f"e.g. {'、'.join(SOURCE_OPTIONS[:3])}"},
+    "機種":                 {"required": False, "type": "str",  "hint": "e.g. GPS / PJ2+GPS"},
+    "零件名稱":             {"required": False, "type": "str",  "hint": "零件/材料名稱"},
+    "零件編號（單據號碼）": {"required": True,  "type": "str",  "hint": "料號 / 批號"},
+    "廠商":                 {"required": True,  "type": "str",  "hint": "供應商名稱"},
+    "不良數":               {"required": True,  "type": "num",  "hint": "不良品數量（整數）"},
+    "P問題點":              {"required": True,  "type": "str",  "hint": "具體不良現象描述"},
+    "原因分析":             {"required": False, "type": "str",  "hint": "根本原因分析"},
+    "D改善對策":            {"required": False, "type": "str",  "hint": "矯正/改善措施"},
+    "C效果確認":            {"required": False, "type": "str",  "hint": "改善效果確認/驗證"},
+    "A標準化":              {"required": False, "type": "str",  "hint": "標準化措施/文件更新"},
+    "責任歸屬":             {"required": False, "type": "str",  "hint": f"e.g. {'、'.join(RESP_OPTIONS[:2])}"},
+    "完成日期":             {"required": False, "type": "date", "hint": "預計/實際完成日期"},
+    "負責人":               {"required": False, "type": "str",  "hint": "負責處理人員"},
+    "狀態":                 {"required": False, "type": "str",  "hint": f"限定值：{'、'.join(IQC_STATUS_OPTIONS)}",
+                             "options": IQC_STATUS_OPTIONS},
+    "照片":                 {"required": False, "type": "str",  "hint": "Google Drive 照片連結"},
+    "廠商稽核":             {"required": False, "type": "str",  "hint": "廠商稽核紀錄"},
 }
 
-# 欄位名稱關鍵字對應（規則式智能辨識）
-# ⚠️ 注意：避免使用過短或通用英文關鍵字（如 name/part/lot/ng），
-#    會誤配 Unnamed:N 或其他欄位。中文關鍵字較安全。
+# 欄位關鍵字對應（規則式智能辨識）
+# 中文關鍵字用 substring，英文用完全相符，避免 Unnamed 誤配
 _FIELD_KEYWORDS: dict[str, list[str]] = {
-    "日期":     ["日期", "發生日期", "入料日期", "檢驗日", "入料日", "時間"],
-    "供應商":   ["供應商", "廠商", "vendor", "supplier"],
-    "料號":     ["料號", "零件編號", "零件號", "品號", "物料號", "partno", "part_no"],
-    "品名":     ["品名", "零件名稱", "品項", "物料名稱", "零件名"],
-    "批號":     ["批號", "批次號", "lot_no", "lotno", "batch_no"],
-    "批量":     ["批量", "批次數量", "total_qty", "批次總量"],
-    "異常數量": ["異常數量", "不良數量", "不良品數", "ng_qty", "defect_qty"],
-    "異常類別": ["異常類別", "問題類別", "故障類別", "異常分類", "defect_type"],
-    "異常描述": ["異常描述", "問題點", "異常說明", "問題描述", "異常現象", "defect_desc"],
-    "判定":     ["判定", "判定結果", "處置結果", "disposition", "verdict"],
-    "責任單位": ["責任單位", "責任歸屬", "responsibility"],
-    "建立人員": ["建立人員", "負責人", "檢驗員", "inspector", "creator"],
-    "備註":     ["備註", "remark", "comment", "note"],
+    "發生日期":             ["日期", "發生日期", "入料日期", "發生"],
+    "來源":                 ["來源", "入料來源", "source"],
+    "機種":                 ["機種", "機型", "型號", "model"],
+    "零件名稱":             ["零件名稱", "品名", "零件名", "品項", "物料名稱"],
+    "零件編號（單據號碼）": ["零件編號", "料號", "零件號", "品號", "單據號碼", "partno", "part_no"],
+    "廠商":                 ["廠商", "供應商", "vendor", "supplier"],
+    "不良數":               ["不良數", "異常數量", "不良數量", "不良品數", "ng_qty", "defect_qty"],
+    "P問題點":              ["p問題點", "問題點", "異常描述", "問題描述", "異常說明"],
+    "原因分析":             ["原因分析", "根本原因", "原因"],
+    "D改善對策":            ["d改善對策", "改善對策", "對策", "改善措施"],
+    "C效果確認":            ["c效果確認", "效果確認", "確認"],
+    "A標準化":              ["a標準化", "標準化"],
+    "責任歸屬":             ["責任歸屬", "責任單位", "責任"],
+    "完成日期":             ["完成日期", "結案日期", "due_date"],
+    "負責人":               ["負責人", "建立人員", "檢驗員", "inspector", "creator"],
+    "狀態":                 ["狀態", "結果"],
+    "照片":                 ["照片", "photo", "image"],
+    "廠商稽核":             ["廠商稽核", "稽核", "audit"],
 }
 
 REQUIRED_FIELDS = [f for f, v in QMS_FIELDS.items() if v["required"]]
@@ -214,21 +221,30 @@ def _validate_df(df_mapped: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def _build_template() -> bytes:
-    """產生匯入範例 Excel 模板"""
+    """產生匯入範例 Excel 模板（比照 IQC問題點病歷格式）"""
     sample = {
-        "日期":     ["2025/05/01", "2025/05/02", "2025/05/03"],
-        "供應商":   ["台積供應商A", "聯發供應商B", "鴻海供應商C"],
-        "料號":     ["P-001-ESC", "P-002-MTR", "P-003-PCB"],
-        "品名":     ["電調外殼", "馬達定子", "控制板"],
-        "批號":     ["LOT250501", "LOT250502", "LOT250503"],
-        "批量":     [500, 300, 200],
-        "異常數量": [12, 5, 3],
-        "異常類別": ["外觀不良", "尺寸超差", "電性不良"],
-        "異常描述": ["表面刮傷，長度約5mm", "孔徑超差±0.15mm", "絕緣阻抗不足"],
-        "判定":     ["全檢後接收", "拒收退貨", "讓步接收"],
-        "責任單位": ["供應商責任", "供應商責任", "雙方共同責任"],
-        "建立人員": ["張小明", "李大華", "王美玲"],
-        "備註":     ["已拍照留存", "", "需追蹤"],
+        "發生日期":             ["2026/03/17", "2026/04/24", "2026/04/28"],
+        "來源":                 ["產線無效工時", "進料退貨", "進料退貨"],
+        "機種":                 ["GPS", "PJ2+GPS", "PJ2+GPS"],
+        "零件名稱":             ["上蓋", "鋁本體", "視窗"],
+        "零件編號（單據號碼）": ["10J43ANU", "1311-000-00046", "1332-002-00201"],
+        "廠商":                 ["志泰", "遠通", "香港泓發"],
+        "不良數":               [1, 12, 4],
+        "P問題點":              [
+            "按鍵毛邊",
+            "1.電池卡扣有毛邊 2.旋鈕孔有毛邊 3.抽驗200PCS/12個不良",
+            "1.PC透明保護膜刮傷 2.抽驗30PCS/4個不良",
+        ],
+        "原因分析":             ["毛邊未修剪", "毛邊未整修", "保護膜刮傷"],
+        "D改善對策":            ["退貨重工修剪", "退貨重工", "更換保護膜"],
+        "C效果確認":            ["IQC確認", "", ""],
+        "A標準化":              ["列入廠商自主查表", "", ""],
+        "責任歸屬":             ["供應商責任", "供應商責任", "供應商責任"],
+        "完成日期":             ["2026/03/12", "", ""],
+        "負責人":               ["白大中", "白大中", "白大中"],
+        "狀態":                 ["結案", "再發", "再發"],
+        "照片":                 ["", "", ""],
+        "廠商稽核":             ["", "", ""],
     }
     buf = io.BytesIO()
     pd.DataFrame(sample).to_excel(buf, index=False)
@@ -659,33 +675,35 @@ with tab_excel:
                                         text=f"匯入中... {i+1} / {len(df_to_import)}",
                                     )
                                     try:
-                                        remark_val = str(row.get("備註", "")).strip()
+                                        def _s(k): return str(row.get(k, "")).strip()
+                                        # 批次備註附加到廠商稽核欄位
+                                        audit_val = _s("廠商稽核")
                                         if batch_remark:
-                                            remark_val = (
-                                                f"{remark_val}｜{batch_remark}"
-                                                if remark_val else batch_remark
-                                            )
+                                            audit_val = f"{audit_val}｜{batch_remark}" if audit_val else batch_remark
                                         rec_id = append_sqm_defect({
-                                            "日期":     _coerce_date(row.get("日期", "")),
-                                            "供應商":   str(row.get("供應商", "")).strip(),
-                                            "料號":     str(row.get("料號", "")).strip(),
-                                            "品名":     str(row.get("品名", "")).strip(),
-                                            "批號":     str(row.get("批號", "")).strip(),
-                                            "批量":     _coerce_num(row.get("批量", "")),
-                                            "異常數量": _coerce_num(row.get("異常數量", "")),
-                                            "異常類別": str(row.get("異常類別", "")).strip(),
-                                            "異常描述": str(row.get("異常描述", "")).strip(),
-                                            "判定":     str(row.get("判定", "")).strip(),
-                                            "責任單位": str(row.get("責任單位", "")).strip(),
-                                            "照片URL":  "",
-                                            "處理狀態": "待處理",
-                                            "SCAR編號": "",
-                                            "建立人員": (
+                                            "發生日期":             _coerce_date(_s("發生日期")),
+                                            "來源":                 _s("來源"),
+                                            "機種":                 _s("機種"),
+                                            "零件名稱":             _s("零件名稱"),
+                                            "零件編號（單據號碼）": _s("零件編號（單據號碼）"),
+                                            "廠商":                 _s("廠商"),
+                                            "不良數":               _coerce_num(_s("不良數")),
+                                            "P問題點":              _s("P問題點"),
+                                            "原因分析":             _s("原因分析"),
+                                            "D改善對策":            _s("D改善對策"),
+                                            "C效果確認":            _s("C效果確認"),
+                                            "A標準化":              _s("A標準化"),
+                                            "責任歸屬":             _s("責任歸屬"),
+                                            "完成日期":             _coerce_date(_s("完成日期")),
+                                            "負責人": (
                                                 (creator_input or "").strip()
                                                 if creator_input is not None
-                                                else str(row.get("建立人員", "")).strip()
+                                                else _s("負責人")
                                             ),
-                                            "備註": remark_val,
+                                            "狀態":                 _s("狀態") or "處理中",
+                                            "照片":                 _s("照片"),
+                                            "廠商稽核":             audit_val,
+                                            "處理狀態":             "待處理",
                                         })
                                         success_ids.append(rec_id)
                                     except Exception as e:
