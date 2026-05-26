@@ -39,127 +39,112 @@ C_WHITE  = colors.white
 GRADE_COLORS = {"CR": C_CR, "MA": C_MA, "MI": C_MI}
 
 # ── 字型管理 ───────────────────────────────────────────
+# 字型名稱常數（固定，不隨備援切換；確保 iqc_pdf / pdf_report 一致）
+_F  = "NotoSansTC"        # Regular
+_FB = "NotoSansTC-Bold"   # Bold（以同字型模擬，reportlab 自動加粗）
 _fonts_registered = False
-_F  = "MJH"       # regular
-_FB = "MJH-B"     # bold
 
-# 固定路徑候選：(path, subfont_index_regular, subfont_index_bold)
-_FONT_CANDIDATES_FIXED = [
-    # ── Windows ──────────────────────────────────────
-    ("C:/Windows/Fonts/msjh.ttc",    0,    1),    # 微軟正黑體（Regular + Bold 各 index）
-    ("C:/Windows/Fonts/msjhbd.ttc",  0,    0),    # 微軟正黑體 Bold 獨立檔
-    ("C:/Windows/Fonts/kaiu.ttf",    None, None), # 標楷體
-    ("C:/Windows/Fonts/mingliu.ttc", 0,    0),    # 細明體
-    ("C:/Windows/Fonts/simsun.ttc",  0,    0),    # 宋體（簡體，最後備用）
-    # ── Linux / Streamlit Cloud (Ubuntu, fonts-noto-cjk) ────────────────
-    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",  0, 0),
-    ("/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf", None, None),
-    ("/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf", None, None),
-    ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",       0, 0),
-    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",  0, 0),
-    ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf",            None, None),
-    ("/usr/share/fonts/truetype/arphic/uming.ttc",              0, 0),
-    ("/usr/share/fonts/truetype/arphic/ukai.ttc",               0, 0),
-    # ── macOS ─────────────────────────────────────────
-    ("/System/Library/Fonts/PingFang.ttc",                       0, 0),
-    ("/Library/Fonts/Arial Unicode MS.ttf",                      None, None),
-    ("/System/Library/Fonts/Supplemental/Arial Unicode MS.ttf",  None, None),
+# ── 字型搜尋優先順序 ─────────────────────────────────────────────────────
+# 第 1 優先：專案內隨附字型（fonts/ 目錄，跨平台保證可用）
+_HERE = os.path.dirname(os.path.abspath(__file__))          # utils/
+_PROJ = os.path.dirname(_HERE)                               # 專案根目錄
+_BUNDLED_FONT = os.path.join(_PROJ, "fonts", "NotoSansTC-Regular.ttf")
+
+# 第 2 優先：各平台系統字型（(path, ttc_subfont_index_or_None)）
+_SYS_CANDIDATES = [
+    # Windows — NotoSansTC 變體
+    ("C:/Windows/Fonts/NotoSansTC-VF.ttf",      None),
+    ("C:/Windows/Fonts/NotoSansTC-Regular.ttf", None),
+    # Windows — 傳統備援
+    ("C:/Windows/Fonts/msjh.ttc",               0),
+    ("C:/Windows/Fonts/kaiu.ttf",               None),
+    ("C:/Windows/Fonts/mingliu.ttc",            0),
+    # Linux / Streamlit Cloud（fonts-noto-cjk 安裝後）
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",   0),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf", None),
+    ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",        0),
+    ("/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",   0),
+    ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf",             None),
+    ("/usr/share/fonts/truetype/arphic/uming.ttc",               0),
+    # macOS
+    ("/System/Library/Fonts/PingFang.ttc",       0),
+    ("/Library/Fonts/Arial Unicode MS.ttf",      None),
 ]
 
 
+def _try_register(path: str, idx):
+    """嘗試以 TTFont 登錄字型（Regular & Bold 同檔），成功回傳 True。"""
+    try:
+        if idx is not None:
+            reg = TTFont(_F, path, subfontIndex=idx)
+            bol = TTFont(_FB, path, subfontIndex=idx)
+        else:
+            reg = TTFont(_F, path)
+            bol = TTFont(_FB, path)
+        pdfmetrics.registerFont(reg)
+        pdfmetrics.registerFont(bol)
+        return True
+    except Exception:
+        return False
+
+
 def _reg_fonts():
-    global _fonts_registered, _F, _FB
+    """
+    登錄中文 TTFont。優先使用專案內隨附的 NotoSansTC-Regular.ttf，
+    其次嘗試各平台系統字型路徑，動態 glob 掃描，
+    最後以 glob 掃描 Linux /usr/share/fonts 尋找任何可用的 CJK 字型。
+    若完全找不到字型，僅印出警告並使用 Helvetica 替代（不崩潰）。
+    """
+    global _fonts_registered
     if _fonts_registered or not _RL_OK:
         return
 
-    # 動態掃描 Linux 系統字型（glob，處理版本差異）
-    dynamic = []
+    # ── 第 1 優先：專案隨附字型 ──────────────────────────────────────────
+    if os.path.exists(_BUNDLED_FONT) and _try_register(_BUNDLED_FONT, None):
+        _fonts_registered = True
+        return
+
+    # ── 第 2 優先：系統固定路徑 ──────────────────────────────────────────
+    for path, idx in _SYS_CANDIDATES:
+        if os.path.exists(path) and _try_register(path, idx):
+            _fonts_registered = True
+            return
+
+    # ── 第 3 優先：Linux glob 動態掃描 ───────────────────────────────────
     for pattern in [
-        "/usr/share/fonts/**/*[Nn]oto*CJK*Regular*.ttc",
-        "/usr/share/fonts/**/*[Nn]oto*CJK*Regular*.otf",
-        "/usr/share/fonts/**/*[Nn]oto*CJK*.ttc",
+        "/usr/share/fonts/**/*NotoSans*TC*.ttf",
+        "/usr/share/fonts/**/*NotoSans*CJK*Regular*.ttc",
+        "/usr/share/fonts/**/*NotoSans*CJK*Regular*.otf",
+        "/usr/share/fonts/**/*NotoSans*CJK*.ttc",
         "/usr/share/fonts/**/*wqy*.ttf",
         "/usr/share/fonts/**/*arphic*.ttc",
     ]:
         for found in glob.glob(pattern, recursive=True):
-            dynamic.append((found, 0, 0))
-
-    all_candidates = _FONT_CANDIDATES_FIXED + dynamic
-
-    for path, ri, bi in all_candidates:
-        if not os.path.exists(path):
-            continue
-        try:
-            # ── Regular 字型 ───────────────────────
-            if ri is not None:
-                pdfmetrics.registerFont(TTFont(_F, path, subfontIndex=ri))
-            else:
-                pdfmetrics.registerFont(TTFont(_F, path))
-
-            # ── Bold 字型（多重備援策略）──────────
-            # 策略 1：msjh.ttc + msjhbd.ttc 特例
-            if "msjh.ttc" in path.lower() and not "msjhbd" in path.lower():
-                bold_alt = "C:/Windows/Fonts/msjhbd.ttc"
-                if os.path.exists(bold_alt):
-                    pdfmetrics.registerFont(TTFont(_FB, bold_alt, subfontIndex=0))
-                    _fonts_registered = True
-                    return
-                # 策略 2：同檔案 index 1（msjh.ttc 的 Bold variant）
-                for try_idx in (1, 0):
-                    try:
-                        pdfmetrics.registerFont(TTFont(_FB, path, subfontIndex=try_idx))
-                        _fonts_registered = True
-                        return
-                    except Exception:
-                        continue
-            else:
-                # 策略 3：使用 bi 指定 index，回退 0
-                bold_idx = bi if bi is not None else (ri if ri is not None else 0)
-                for try_idx in (bold_idx, 0):
-                    try:
-                        if try_idx is not None:
-                            pdfmetrics.registerFont(TTFont(_FB, path, subfontIndex=try_idx))
-                        else:
-                            pdfmetrics.registerFont(TTFont(_FB, path))
-                        _fonts_registered = True
-                        return
-                    except Exception:
-                        continue
-
-        except Exception:
-            continue   # 此候選路徑失敗，試下一個
-
-    # ── 終極備援：PDF 內建 CID 字型（不需任何系統字型檔案）──────────────────
-    # UnicodeCIDFont 是 PDF 標準字型，由 reportlab 內建支援，
-    # 無需安裝系統字型即可渲染中文（正體/簡體/日文），
-    # PDF 閱覽器（Adobe / Chrome / Edge）均內建對應字型。
-    try:
-        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
-        _CID_CANDIDATES = [
-            "MSung-Light",    # 正體中文（台灣）
-            "MHei-Medium",    # 正體中文（香港）
-            "STSong-Light",   # 簡體中文
-        ]
-        for cid_name in _CID_CANDIDATES:
-            try:
-                pdfmetrics.registerFont(UnicodeCIDFont(cid_name))
-                # 同名重複 register 無害；_F/_FB 也指向同一 CID 字型
-                # （CID 字型無獨立 Bold，以同字型替代）
-                _F  = cid_name
-                _FB = cid_name
+            if _try_register(found, 0):
                 _fonts_registered = True
                 return
-            except Exception:
-                continue
-    except ImportError:
-        pass
+            if _try_register(found, None):
+                _fonts_registered = True
+                return
 
-    raise RuntimeError(
-        "找不到中文字型！\n"
-        "• 本機 Windows：確認 C:/Windows/Fonts/ 有 msjh.ttc 或 kaiu.ttf\n"
-        "• Streamlit Cloud：確認 packages.txt 含 fonts-noto-cjk 並重新部署\n"
-        "• 最後備援：pip install reportlab 並重啟後再試"
+    # ── 找不到字型：顯示警告，以 Helvetica 替代（避免崩潰）───────────────
+    import warnings
+    warnings.warn(
+        "[PDF] 中文字型缺失：找不到 NotoSansTC-Regular.ttf 或任何 CJK 字型。\n"
+        "      PDF 中文將顯示為方塊或亂碼。\n"
+        "      解決方式：\n"
+        "      1. 確認 fonts/NotoSansTC-Regular.ttf 存在於專案根目錄\n"
+        "      2. Streamlit Cloud：確認 packages.txt 含 fonts-noto-cjk\n"
+        "      3. 本機 Windows：確認 C:/Windows/Fonts/ 有 NotoSansTC-VF.ttf",
+        stacklevel=3,
     )
+    # 以 Helvetica 填充，確保 PDF 仍可生成（ASCII 部分正常）
+    try:
+        pdfmetrics.registerFont(TTFont(_F,  "C:/Windows/Fonts/arial.ttf"))
+        pdfmetrics.registerFont(TTFont(_FB, "C:/Windows/Fonts/arialbd.ttf"))
+    except Exception:
+        pass   # 完全放棄，reportlab 預設字型處理剩餘問題
+    _fonts_registered = True  # 標記完成，避免重複嘗試
 
 
 # ══════════════════════════════════════════════════════
