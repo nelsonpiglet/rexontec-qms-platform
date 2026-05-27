@@ -15,6 +15,7 @@ from utils.inspection_data import (
     get_inspectors, get_supervisors, get_mfg_groups,
     get_all_items, get_sections,
 )
+from utils.oqc_template_db import has_template, get_sections as get_oqc_sections
 from utils.gsheet import append_oqc_record
 from utils.auth import require_login, user_info_bar
 
@@ -208,13 +209,46 @@ with col_t2:
             st.session_state.results = {}
             st.rerun()
 
-product_type = st.session_state.product_type
-sections     = get_sections(product_type)
-all_items    = get_all_items(sections)
-is_esc       = (product_type == "esc")
+product_type  = st.session_state.product_type
+is_esc        = (product_type == "esc")
+
+# ── OQC 模板動態注入（馬達專用）──────────────────────────────────
+_hdr_model   = st.session_state.get("hdr_model", "")
+_use_oqc_tpl = (not is_esc) and has_template(_hdr_model)
+
+# 偵測模板狀態變化 → 重置結果，避免舊資料殘留
+_tpl_state_key = f"{product_type}|{_hdr_model}|{_use_oqc_tpl}"
+if st.session_state.get("_last_tpl_state") != _tpl_state_key:
+    st.session_state["_last_tpl_state"] = _tpl_state_key
+    st.session_state.results = {}
+    st.session_state.units   = []
+
+if _use_oqc_tpl:
+    sections = get_oqc_sections(_hdr_model)
+else:
+    sections = get_sections(product_type)
+
+all_items = get_all_items(sections)
 
 st.markdown("<hr style='border:none;border-top:1px solid var(--border);margin:8px 0 14px'>",
             unsafe_allow_html=True)
+
+# ── OQC 模板狀態提示 ────────────────────────────────────────────────
+if _use_oqc_tpl:
+    _tpl_n_sec   = len(sections)
+    _tpl_n_items = len(all_items)
+    st.markdown(
+        f'<div style="background:#e8f5e9;border:1px solid #a5d6a7;border-left:4px solid #2e7d32;'
+        f'border-radius:7px;padding:9px 14px;margin-bottom:10px;font-size:12px;'
+        f'display:flex;align-items:center;gap:10px">'
+        f'<span style="font-size:18px">📋</span>'
+        f'<div><b style="color:#2e7d32">OQC 成檢表模板已套用</b>　機種：{_hdr_model}'
+        f'　{_tpl_n_sec} 區段 / {_tpl_n_items} 項目'
+        f'<span style="color:var(--muted);font-size:11px;margin-left:8px">'
+        f'（來自 Excel 匯入，可至系統設定 → OQC 成檢表模板管理）</span></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 # ════════════════════════════════════════════════════
@@ -247,16 +281,33 @@ with st.expander("📋 基本資料 / 表頭", expanded=True):
         hdr_insp     = st.selectbox("檢驗員 *", get_inspectors(), key="hdr_insp")
 
     c10, c11, c12 = st.columns(3)
-    with c10:
-        hdr_super    = st.selectbox("主管(品保) *", get_supervisors(), key="hdr_super")
-    if is_esc:
+    if _use_oqc_tpl:
+        # 馬達 OQC 模板：顯示檢驗方法 + 判定結果（不顯示品保主管）
+        with c10:
+            hdr_insp_method = st.selectbox(
+                "檢驗方法 *", ["正常", "加嚴", "減量"], key="hdr_method",
+                help="正常 = Normal / 加嚴 = Tightened / 減量 = Reduced (MIL-STD-105E)",
+            )
         with c11:
-            hdr_mfg_grp  = st.selectbox("製造組別", get_mfg_groups(), key="hdr_mfg")
-        with c12:
-            hdr_mfg_ord  = st.text_input("製造編號/櫃號", placeholder="例：ESC-2026-A-001", key="hdr_ord")
-    else:
+            hdr_verdict = st.selectbox(
+                "判定結果 *", ["允收", "不允收"], key="hdr_verdict",
+            )
+        hdr_super   = ""
         hdr_mfg_grp = "─"
         hdr_mfg_ord = ""
+    else:
+        hdr_insp_method = "正常"
+        hdr_verdict     = ""
+        with c10:
+            hdr_super = st.selectbox("主管(品保) *", get_supervisors(), key="hdr_super")
+        if is_esc:
+            with c11:
+                hdr_mfg_grp = st.selectbox("製造組別", get_mfg_groups(), key="hdr_mfg")
+            with c12:
+                hdr_mfg_ord = st.text_input("製造編號/櫃號", placeholder="例：ESC-2026-A-001", key="hdr_ord")
+        else:
+            hdr_mfg_grp = "─"
+            hdr_mfg_ord = ""
 
     # 公司別 + 送樣
     st.markdown("<hr style='border:none;border-top:1px dashed var(--border);margin:8px 0'>",
@@ -892,6 +943,8 @@ with st.expander("📄 匯出 PDF 報告（填寫中途亦可下載）", expande
             "mfg_order_no": st.session_state.get("hdr_ord", ""),
             "is_sample":    st.session_state.get("oqc_is_sample", False),
             "company":      "rexon" if "力山" in _co_raw else "rexontec",
+            "insp_method":  st.session_state.get("hdr_method", "正常"),
+            "verdict":      st.session_state.get("hdr_verdict", ""),
         }
         if st.button("🖨️ 生成 PDF", key="gen_pdf_btn", type="primary"):
             with st.spinner("正在生成 PDF…"):
@@ -958,6 +1011,8 @@ if submit_clicked:
         "mfg_order_no": hdr_mfg_ord if is_esc else "",
         "is_sample":    st.session_state.get("oqc_is_sample", False),
         "company":      "rexon" if "力山" in _co_submit else "rexontec",
+        "insp_method":  hdr_insp_method,
+        "verdict":      hdr_verdict,
     }
 
     with st.spinner("寫入 Google Sheet 中…"):

@@ -299,6 +299,9 @@ def generate_pdf(
     ]
     if is_esc and header.get("mfg_order_no"):
         info_rows.append(hrow("製造編號/櫃號", header.get("mfg_order_no", "─"), "", ""))
+    if not is_esc and header.get("insp_method"):
+        info_rows.append(hrow("檢驗方法", header.get("insp_method", "─"),
+                              "判定結果", header.get("verdict", "─")))
 
     cw = avail_w / 4
     info_tbl = Table(info_rows, colWidths=[cw * 0.55, cw * 0.95, cw * 0.55, cw * 0.95])

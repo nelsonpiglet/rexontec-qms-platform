@@ -84,10 +84,11 @@ def _save_and_rerun(new_cfg: dict):
 # ═══════════════════════════════════════════════════
 # Tab 切換
 # ═══════════════════════════════════════════════════
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab3b, tab4, tab5, tab6 = st.tabs([
     "⚙️ 基本設定",
     "⚡ 電調 ESC 檢驗項目",
     "🔧 馬達 Motor 檢驗項目",
+    "📋 OQC 成檢表模板",
     "🔬 IQC 零件庫",
     "🔐 登入設定",
     "📋 IPQC 巡檢設定",
@@ -389,6 +390,106 @@ with tab2:
 # ───────────────────────────────────────────────────
 with tab3:
     inspection_item_editor("motor", "motor_sections")
+
+
+# ───────────────────────────────────────────────────
+# TAB 3B：OQC 成檢表模板管理
+# ───────────────────────────────────────────────────
+with tab3b:
+    st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#f7f9fc;border:1px solid var(--border);
+            border-left:4px solid #6a1b9a;border-radius:6px;padding:10px 14px">
+  管理從 Excel 匯入的 OQC 成檢表模板。模板建立後，「出廠檢驗輸入」→ 馬達 Motor
+  頁面選取對應機種時，將自動套用此模板的檢驗項目。<br>
+  如需新增模板，請至「<b>📥 文件匯入中心</b> → OQC 成檢表匯入」上傳 Excel。
+</div>
+""", unsafe_allow_html=True)
+
+    try:
+        from utils.oqc_template_db import load_templates, delete_template as _del_tpl, upsert_template
+        import copy as _copy_mod
+
+        oqc_templates = load_templates()
+
+        if not oqc_templates:
+            st.markdown("""
+<div style="background:#fafbfc;border:2px dashed #ddd;border-radius:10px;
+            padding:40px;text-align:center;color:#bbb">
+  <div style="font-size:32px;margin-bottom:8px">📋</div>
+  <div style="font-size:13px;font-weight:600;color:#aaa">尚無 OQC 成檢表模板</div>
+  <div style="font-size:11px;margin-top:6px">請先至「文件匯入中心」上傳 Excel 成檢表</div>
+</div>
+""", unsafe_allow_html=True)
+            if st.button("📥 前往文件匯入中心", use_container_width=True, key="goto_import_oqc"):
+                st.switch_page("pages/50_📥_文件匯入中心.py")
+        else:
+            # ── 模板清單 ─────────────────────────────────
+            for model_key, tpl in oqc_templates.items():
+                sections  = tpl.get("sections", [])
+                n_items   = sum(len(s.get("items", [])) for s in sections)
+                updated   = tpl.get("updated_at", tpl.get("created_at", "─"))
+                doc_no    = tpl.get("doc_no", "─")
+                rev       = tpl.get("rev", "─")
+                src_file  = tpl.get("source_file", "─")
+
+                with st.expander(
+                    f"📋  **{model_key}**  ·  {len(sections)} 區段  ·  {n_items} 項目  ·  更新：{updated}",
+                    expanded=False,
+                ):
+                    mc1, mc2, mc3 = st.columns(3)
+                    with mc1:
+                        st.caption(f"文件編號：{doc_no}")
+                        st.caption(f"版次：{rev}")
+                    with mc2:
+                        st.caption(f"來源檔：{src_file}")
+                        st.caption(f"建立：{tpl.get('created_at', '─')}")
+                    with mc3:
+                        st.markdown("<br>", unsafe_allow_html=True)
+                        if st.button("🗑️ 刪除此模板", key=f"del_oqc_{model_key}",
+                                     help="刪除後無法復原，如需重新使用請再次匯入 Excel"):
+                            if _del_tpl(model_key):
+                                st.success(f"已刪除「{model_key}」模板")
+                                st.rerun()
+
+                    # 展開各 section 預覽
+                    for sec in sections:
+                        st.markdown(
+                            f'<div style="font-size:12px;font-weight:700;color:var(--navy);'
+                            f'border-left:3px solid var(--blue2);padding-left:8px;margin:8px 0 4px">'
+                            f'{sec["id"]}｜{sec["label"]}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        for it in sec.get("items", []):
+                            gc = {"CR": "#c0392b", "MA": "#d68910", "MI": "#1e8449"}.get(it.get("grade", "MA"), "#888")
+                            type_badge = (
+                                '<span style="background:#e3f2fd;color:#1565c0;'
+                                'padding:1px 6px;border-radius:3px;font-size:9.5px;font-weight:700;margin-right:4px">'
+                                f'{"PF" if it["type"]=="pf" else "NUM"}</span>'
+                            )
+                            st.markdown(
+                                f'<div style="background:#fafbfc;border:1px solid var(--border);'
+                                f'border-left:3px solid {gc};border-radius:5px;'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:11.5px">'
+                                f'{type_badge}'
+                                f'<span style="background:{gc};color:#fff;padding:1px 6px;'
+                                f'border-radius:3px;font-size:9px;font-weight:800;margin-right:6px">'
+                                f'{it.get("grade","MA")}</span>'
+                                f'<b>{it["name"][:40]}</b>'
+                                f'<span style="color:var(--muted);font-size:10.5px;margin-left:8px">'
+                                f'規格：{it["spec"][:25]}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("📥 前往文件匯入中心（新增模板）", use_container_width=True, key="goto_import_oqc2"):
+                st.switch_page("pages/50_📥_文件匯入中心.py")
+
+    except ImportError:
+        st.error("❌ 缺少 utils/oqc_template_db.py，請確認檔案存在。")
+    except Exception as _e:
+        st.error(f"❌ 模板管理發生錯誤：{_e}")
 
 
 # ───────────────────────────────────────────────────

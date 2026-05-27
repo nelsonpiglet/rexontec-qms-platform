@@ -257,12 +257,238 @@ def _build_template() -> bytes:
 # ═══════════════════════════════════════════════════
 # 主畫面 Tabs
 # ═══════════════════════════════════════════════════
-tab_excel, tab_pdf, tab_ocr, tab_email = st.tabs([
+tab_excel, tab_oqc, tab_pdf, tab_ocr, tab_email = st.tabs([
     "📊 Excel 匯入 IQC 異常",
+    "🔧 OQC 成檢表匯入",
     "📄 PDF 匯入 SCAR（預留）",
     "🖼️ 圖片 OCR 辨識（預留）",
     "📧 Email 自動建案（預留）",
 ])
+
+# ═══════════════════════════════════════════════════
+# Tab 2：OQC 成檢表 Excel 匯入（PoC — MD1003RX）
+# ═══════════════════════════════════════════════════
+with tab_oqc:
+    st.markdown("""
+    <div style="display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+      <div style="background:#e8f5e9;border:1px solid #a5d6a7;border-radius:8px;
+                  padding:7px 14px;font-size:12px;font-weight:700;color:#2e7d32">
+        ① 上傳成檢表 Excel</div>
+      <div style="color:#ccc;font-size:18px">›</div>
+      <div style="background:#e3f2fd;border:1px solid #90caf9;border-radius:8px;
+                  padding:7px 14px;font-size:12px;font-weight:700;color:#1565c0">
+        ② 解析預覽</div>
+      <div style="color:#ccc;font-size:18px">›</div>
+      <div style="background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;
+                  padding:7px 14px;font-size:12px;font-weight:700;color:#e65100">
+        ③ 確認機種</div>
+      <div style="color:#ccc;font-size:18px">›</div>
+      <div style="background:#f3e5f5;border:1px solid #ce93d8;border-radius:8px;
+                  padding:7px 14px;font-size:12px;font-weight:700;color:#6a1b9a">
+        ④ 儲存為模板</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.info(
+        "💡 上傳 MD1003RX 格式成檢表 Excel，系統自動識別檢驗區段與項目，"
+        "轉換為 OQC 模板供「出廠檢驗輸入」頁面使用。"
+        "  PoC 版本：目前支援 **MD1003RX 馬達成檢表** 格式。"
+    )
+
+    oqc_file = st.file_uploader(
+        "拖曳或點擊上傳成檢表 Excel（.xlsx）",
+        type=["xlsx"],
+        key="oqc_excel_upload",
+        label_visibility="collapsed",
+    )
+
+    if not oqc_file:
+        st.markdown("""
+        <div style="background:#fafbfc;border:2px dashed #ddd;border-radius:10px;
+                    padding:36px;text-align:center;color:#bbb;margin-top:10px">
+          <div style="font-size:36px;margin-bottom:8px">📋</div>
+          <div style="font-size:13px;font-weight:600;color:#aaa">尚未上傳成檢表 Excel</div>
+          <div style="font-size:11px;margin-top:6px">請上傳力山公司成品檢驗表格式的 Excel 檔案</div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        # ── ② 解析 Excel ─────────────────────────────
+        try:
+            from utils.oqc_excel_parser import parse_oqc_excel, extract_header_meta
+            from utils.oqc_template_db  import upsert_template, list_models
+
+            oqc_bytes   = oqc_file.read()
+            sections    = parse_oqc_excel(oqc_bytes)
+            header_meta = extract_header_meta(oqc_bytes)
+            parse_ok    = True
+        except Exception as _pe:
+            st.error(f"❌ 解析失敗：{_pe}")
+            parse_ok = False
+
+        if parse_ok:
+            if not sections:
+                st.warning("⚠️ 未偵測到任何檢驗區段，請確認 Excel 格式正確。")
+            else:
+                total_items = sum(len(s["items"]) for s in sections)
+                st.success(
+                    f"✅ 解析成功：**{len(sections)}** 個區段｜"
+                    f"**{total_items}** 個檢驗項目"
+                )
+
+                # ── 預覽解析結果 ─────────────────────────
+                st.markdown(
+                    '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+                    'border-left:4px solid #1565c0;padding-left:10px;margin:10px 0 8px">'
+                    '② 解析結果預覽</div>',
+                    unsafe_allow_html=True,
+                )
+
+                for sec in sections:
+                    grade_counts = {}
+                    type_counts  = {}
+                    for it in sec["items"]:
+                        grade_counts[it["grade"]] = grade_counts.get(it["grade"], 0) + 1
+                        type_counts [it["type"]]  = type_counts .get(it["type"],  0) + 1
+
+                    badge_html = "".join(
+                        f'<span style="background:{"#c0392b" if g=="CR" else "#d68910" if g=="MA" else "#1e8449"};'
+                        f'color:#fff;padding:1px 8px;border-radius:4px;font-size:10px;'
+                        f'font-weight:800;margin-left:4px">{g}×{n}</span>'
+                        for g, n in sorted(grade_counts.items())
+                    )
+                    type_html = "".join(
+                        f'<span style="background:#e3f2fd;color:#1565c0;padding:1px 8px;'
+                        f'border-radius:4px;font-size:10px;font-weight:700;margin-left:4px">'
+                        f'{"PASS/FAIL" if t=="pf" else "數值量測"}×{n}</span>'
+                        for t, n in sorted(type_counts.items())
+                    )
+
+                    with st.expander(
+                        f"  **{sec['id']}｜{sec['label']}**  ·  {len(sec['items'])} 項",
+                        expanded=True,
+                    ):
+                        st.markdown(
+                            f'<div style="margin-bottom:8px">{badge_html}{type_html}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        import pandas as _pd
+                        rows = []
+                        for it in sec["items"]:
+                            extra = ""
+                            if it["type"] == "num":
+                                u = it.get("unit", "")
+                                mn = it.get("min")
+                                mx = it.get("max")
+                                if mn is not None and mx is not None:
+                                    extra = f"{mn}～{mx} {u}"
+                                elif mn is not None:
+                                    extra = f"≧{mn} {u}"
+                                elif mx is not None:
+                                    extra = f"≦{mx} {u}"
+                                else:
+                                    extra = u
+                            rows.append({
+                                "ID": it["id"],
+                                "No.": it["no"],
+                                "等級": it["grade"],
+                                "類型": "PASS/FAIL" if it["type"] == "pf" else "數值量測",
+                                "檢驗項目": it["name"][:40],
+                                "規格": it["spec"][:25],
+                                "範圍/單位": extra,
+                                "工具": it.get("tool", ""),
+                            })
+                        st.dataframe(
+                            _pd.DataFrame(rows),
+                            use_container_width=True,
+                            height=min(300, 35 * len(rows) + 40),
+                            hide_index=True,
+                        )
+
+                st.divider()
+
+                # ── ③ 確認機種 ────────────────────────────
+                st.markdown(
+                    '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+                    'border-left:4px solid #e65100;padding-left:10px;margin:0 0 8px">'
+                    '③ 確認機種名稱</div>',
+                    unsafe_allow_html=True,
+                )
+
+                # 已有模板的機種清單（用於提示）
+                existing_models = list_models()
+                auto_model = header_meta.get("model", "") or "MD1003RX"
+
+                oc1, oc2 = st.columns([2, 3])
+                with oc1:
+                    model_input = st.text_input(
+                        "機種名稱（作為模板識別碼）",
+                        value=auto_model,
+                        placeholder="例：MD1003RX",
+                        key="oqc_model_input",
+                    )
+                with oc2:
+                    if existing_models:
+                        st.markdown(
+                            f'<div style="padding-top:28px;font-size:11.5px;color:var(--muted)">'
+                            f'📋 已有模板：{"、".join(existing_models)}</div>',
+                            unsafe_allow_html=True,
+                        )
+                    if model_input in existing_models:
+                        st.warning(
+                            f"⚠️ 機種「{model_input}」已有模板，儲存後將**覆蓋**舊模板。"
+                        )
+
+                doc_no  = st.text_input("文件編號（選填）", key="oqc_doc_no", placeholder="例：QC-MD1003-001")
+                rev_no  = st.text_input("版次（選填）", key="oqc_rev_no", placeholder="例：V1.0")
+                oqc_note = st.text_area("備註（選填）", key="oqc_note_input", height=60)
+
+                st.divider()
+
+                # ── ④ 儲存為模板 ─────────────────────────
+                st.markdown(
+                    '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+                    'border-left:4px solid #6a1b9a;padding-left:10px;margin:0 0 8px">'
+                    '④ 儲存為 OQC 模板</div>',
+                    unsafe_allow_html=True,
+                )
+
+                confirm_oqc = st.checkbox(
+                    f"✅ 確認將 **{total_items}** 個檢驗項目儲存為「{model_input or '（請填機種名稱）'}」的 OQC 模板",
+                    key="oqc_confirm_save",
+                )
+
+                if st.button(
+                    "💾 儲存 OQC 模板",
+                    type="primary",
+                    use_container_width=True,
+                    disabled=(not confirm_oqc or not (model_input or "").strip()),
+                ):
+                    try:
+                        upsert_template(
+                            model    = model_input.strip(),
+                            sections = sections,
+                            meta     = {
+                                "doc_no": doc_no.strip(),
+                                "rev":    rev_no.strip(),
+                                "note":   oqc_note.strip(),
+                                "source_file": oqc_file.name,
+                            },
+                        )
+                        st.success(
+                            f"🎉 OQC 模板「**{model_input}**」儲存成功！\n\n"
+                            f"共 {len(sections)} 個區段、{total_items} 個檢驗項目。\n\n"
+                            "前往「出廠檢驗輸入」→ 選擇馬達 Motor → 選取此機種，即可使用動態模板。"
+                        )
+                        oc_nav1, oc_nav2 = st.columns(2)
+                        with oc_nav1:
+                            if st.button("🔬 前往出廠檢驗", use_container_width=True, key="oqc_goto_insp"):
+                                st.switch_page("pages/01_出廠檢驗輸入.py")
+                        with oc_nav2:
+                            if st.button("⚙️ 前往系統設定查看模板", use_container_width=True, key="oqc_goto_set"):
+                                st.switch_page("pages/03_系統設定.py")
+                    except Exception as _se:
+                        st.error(f"❌ 儲存失敗：{_se}")
+
 
 # ─── 預留功能佔位 ─────────────────────────────────
 _placeholder = (
