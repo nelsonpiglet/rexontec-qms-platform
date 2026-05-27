@@ -29,6 +29,8 @@ COLUMNS = [
     "S4-高震動", "S4-高溫", "S4-無法啟動",
     "S5-線圈燒毀", "S5-磁鐵脫落", "S5-生鏽",
     "最終判定", "保固判定", "維修方式", "是否報廢", "五步檢測時間",
+    # ─── 分離技術判定欄位 ─────────────────────────
+    "技術判定", "是否可維修", "維修成本評估",
 ]
 
 @st.cache_resource(show_spinner="連線維修系統 Google Sheet 中...")
@@ -138,7 +140,7 @@ def load_all_cases():
     return pd.DataFrame(columns=COLUMNS)
 
 
-def update_status(rma_id: str, new_status: str, tech_note: str = "") -> bool:
+def update_status(rma_id: str, new_status: str, tech_note: str = "", tech_judgment: str = "") -> bool:
     sheet   = get_sheet()
     row_num = find_row_by_rma(sheet, rma_id)
     if row_num == -1:
@@ -146,6 +148,11 @@ def update_status(rma_id: str, new_status: str, tech_note: str = "") -> bool:
     sheet.update_cell(row_num, STATUS_COL, new_status)
     if tech_note:
         sheet.update_cell(row_num, TECH_COL, tech_note)
+    if tech_judgment:
+        headers = sheet.row_values(1)
+        col_map = {h.strip(): i + 1 for i, h in enumerate(headers) if h.strip()}
+        if "技術判定" in col_map:
+            sheet.update_cell(row_num, col_map["技術判定"], tech_judgment)
     return True
 
 

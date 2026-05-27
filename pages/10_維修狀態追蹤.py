@@ -66,8 +66,13 @@ def _gdrive_bytes(url: str):
         return None
 
 
-STATUS_LIST   = ["待收件","已收件","初診中","等待零件","維修中","待QC","已出廠","報廢通知","已取消"]
-DONE_STATUS   = {"已出廠","報廢通知","已取消"}
+STATUS_LIST   = ["待收件","已收件","初診中","待檢測","待零件","維修中","待QC","已完成","已出廠","已取消"]
+DONE_STATUS   = {"已完成","已出廠","已取消"}
+TECH_JUDGMENT_LIST = [
+    "", "可維修", "保固內", "保固外", "人為撞擊",
+    "軸承損壞", "線圈燒毀", "磁鐵脫落", "待拆解分析",
+    "無法維修", "建議報廢", "已報廢",
+]
 PRIORITY_DAYS = {"P1":2,"P2":5,"P3":7,"P4":14}
 
 
@@ -107,7 +112,7 @@ df["逾期天數"] = df.apply(calc_overdue, axis=1)
 # ── KPI 統計卡 ────────────────────────────────
 total      = len(df)
 active     = df[~df["維修狀態"].isin(DONE_STATUS)]
-done       = df[df["維修狀態"] == "已出廠"]
+done       = df[df["維修狀態"].isin({"已出廠", "已完成"})]
 pending_qc = df[df["維修狀態"] == "待QC"]
 overdue    = active[active["逾期天數"] > 0]
 
@@ -208,7 +213,7 @@ st.markdown("""
 rma_list = df["RMA編號"].dropna().tolist()
 
 with st.form("update_form"):
-    ua, ub = st.columns(2)
+    ua, ub, uc = st.columns([2, 2, 2])
     with ua:
         sel_rma = st.selectbox("選擇 RMA 案件", rma_list)
     with ub:
@@ -216,8 +221,17 @@ with st.form("update_form"):
         cur_status = cur_row["維修狀態"].values[0] if not cur_row.empty else "待收件"
         cur_idx    = STATUS_LIST.index(cur_status) if cur_status in STATUS_LIST else 0
         new_status = st.selectbox(
-            f"新狀態　（目前：{STATUS_EMOJI.get(cur_status,'')} {cur_status}）",
+            f"流程狀態　（目前：{STATUS_EMOJI.get(cur_status,'')} {cur_status}）",
             STATUS_LIST, index=cur_idx
+        )
+    with uc:
+        cur_tj = ""
+        if not cur_row.empty and "技術判定" in df.columns:
+            cur_tj = str(cur_row["技術判定"].values[0] or "")
+        tj_idx = TECH_JUDGMENT_LIST.index(cur_tj) if cur_tj in TECH_JUDGMENT_LIST else 0
+        new_tech_judgment = st.selectbox(
+            "技術判定（選填）",
+            TECH_JUDGMENT_LIST, index=tj_idx
         )
 
     tech_note = st.text_area(
@@ -237,14 +251,14 @@ with st.form("update_form"):
     submitted_u = st.form_submit_button("💾　儲存狀態", type="primary")
 
 if submitted_u:
-    if new_status == cur_status and not tech_note:
-        st.warning("狀態未變更，也沒有填入備註。")
+    if new_status == cur_status and not new_tech_judgment and not tech_note:
+        st.warning("狀態未變更，也沒有填入技術判定或備註。")
     else:
         with st.spinner("更新中..."):
-            ok = update_status(sel_rma, new_status, tech_note)
+            ok = update_status(sel_rma, new_status, tech_note, new_tech_judgment)
         if ok:
             st.success(f"✅ {sel_rma} 已更新為：{STATUS_EMOJI.get(new_status,'')} **{new_status}**")
-            if new_status in {"已出廠", "報廢通知"} and not cur_row.empty:
+            if new_status in {"已出廠", "已完成"} and not cur_row.empty:
                 info = cur_row.iloc[0].to_dict()
                 sent = notify_case_closed(sel_rma, new_status, info)
                 if sent:
@@ -324,6 +338,10 @@ if not det_df.empty:
                     use_container_width=True, hide_index=True,
                 )
 
+    # ── 提前終止 session_state keys ──
+    _et_stop_key  = f"et_stop_{det_rma}"
+    _et_scrap_key = f"et_scrap_{det_rma}"
+
     # ───────────── Step 1 外觀檢測 ─────────────
     st.markdown(
         '<div style="font-size:13px;font-weight:700;color:var(--navy);'
@@ -337,68 +355,116 @@ if not det_df.empty:
     with c1c: s1_sand  = st.checkbox("沙土侵入", value=_b("S1-沙土侵入"), key=f"s1sd_{det_rma}")
     with c1d: s1_screw = st.checkbox("螺絲裂痕", value=_b("S1-螺絲裂痕"), key=f"s1sc_{det_rma}")
 
-    # ───────────── Step 2 手感測試 ─────────────
-    st.markdown(
-        '<div style="font-size:13px;font-weight:700;color:var(--navy);'
-        'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
-        'Step 2 🤚 手感測試</div>',
-        unsafe_allow_html=True,
-    )
-    c2a, c2b, c2c, _ = st.columns(4)
-    with c2a: s2_noise   = st.checkbox("異音",     value=_b("S2-異音"),     key=f"s2no_{det_rma}")
-    with c2b: s2_stuck   = st.checkbox("卡頓",     value=_b("S2-卡頓"),     key=f"s2st_{det_rma}")
-    with c2c: s2_bearing = st.checkbox("軸承鬆動", value=_b("S2-軸承鬆動"), key=f"s2be_{det_rma}")
+    # ── 人為撞擊判定：提前終止檢測 ──────────────────
+    if s1_axis and s1_shell:
+        st.markdown(
+            '<div style="background:#fff3f3;border:2px solid #e74c3c;border-radius:8px;'
+            'padding:12px 18px;margin:8px 0 4px;font-size:13px;font-weight:700;color:#c0392b">'
+            '⚠️ 已符合人為撞擊判定，建議停止後續檢測</div>',
+            unsafe_allow_html=True,
+        )
+        et_c1, et_c2, et_c3 = st.columns([2, 2, 4])
+        with et_c1:
+            if st.button("🛑 結束檢測", key=f"et_stop_btn_{det_rma}", type="primary"):
+                st.session_state[_et_stop_key]  = True
+                st.session_state[_et_scrap_key] = False
+                st.rerun()
+        with et_c2:
+            if st.button("♻️ 轉報廢流程", key=f"et_scrap_btn_{det_rma}"):
+                st.session_state[_et_scrap_key] = True
+                st.session_state[_et_stop_key]  = False
+                st.rerun()
+        if st.session_state.get(_et_stop_key, False):
+            st.info("⏹ 已選擇結束檢測，步驟 2–5 已跳過。")
+        elif st.session_state.get(_et_scrap_key, False):
+            st.info("♻️ 已選擇轉報廢流程，請填寫下方最終結果。")
+    else:
+        # 條件不再成立時清除旗標
+        st.session_state.pop(_et_stop_key, None)
+        st.session_state.pop(_et_scrap_key, None)
 
-    # ───────────── Step 3 電氣測試 ─────────────
-    st.markdown(
-        '<div style="font-size:13px;font-weight:700;color:var(--navy);'
-        'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
-        'Step 3 ⚡ 電氣測試（三用電表）</div>',
-        unsafe_allow_html=True,
-    )
-    c3a, c3b, c3c = st.columns(3)
-    with c3a: s3_ab = st.number_input("AB 阻值 (Ω)", value=_f("S3-AB阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ab_{det_rma}")
-    with c3b: s3_bc = st.number_input("BC 阻值 (Ω)", value=_f("S3-BC阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3bc_{det_rma}")
-    with c3c: s3_ca = st.number_input("CA 阻值 (Ω)", value=_f("S3-CA阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ca_{det_rma}")
+    _is_early_stop  = st.session_state.get(_et_stop_key, False)
+    _is_early_scrap = st.session_state.get(_et_scrap_key, False)
 
-    coil_bad, coil_dev = _coil_abnormal(s3_ab, s3_bc, s3_ca)
-    if s3_ab > 0 or s3_bc > 0 or s3_ca > 0:
-        if coil_bad:
-            st.error(f"⚠️ 線圈異常：三組阻值最大差異 **{coil_dev:.1f}%**（超過 10% 閾值），請確認線圈狀態")
-        else:
-            st.success(f"✅ 阻值均衡：差異 {coil_dev:.1f}%（< 10%），正常")
+    # ── 預設 Steps 2–5 變數（提前終止時使用）──
+    s2_noise = s2_stuck = s2_bearing = False
+    s3_ab = s3_bc = s3_ca = 0.0
+    coil_bad, coil_dev = False, 0.0
+    s4_vib = s4_heat = s4_start = False
+    s5_coil = s5_magnet = s5_rust = False
 
-    # ───────────── Step 4 通電測試 ─────────────
-    st.markdown(
-        '<div style="font-size:13px;font-weight:700;color:var(--navy);'
-        'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
-        'Step 4 🔌 通電測試</div>',
-        unsafe_allow_html=True,
-    )
-    c4a, c4b, c4c, _ = st.columns(4)
-    with c4a: s4_vib   = st.checkbox("高震動",   value=_b("S4-高震動"),   key=f"s4vb_{det_rma}")
-    with c4b: s4_heat  = st.checkbox("高溫",     value=_b("S4-高溫"),     key=f"s4ht_{det_rma}")
-    with c4c: s4_start = st.checkbox("無法啟動", value=_b("S4-無法啟動"), key=f"s4st_{det_rma}")
+    if not _is_early_stop:
+        # ───────────── Step 2 手感測試 ─────────────
+        st.markdown(
+            '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+            'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
+            'Step 2 🤚 手感測試</div>',
+            unsafe_allow_html=True,
+        )
+        c2a, c2b, c2c, _ = st.columns(4)
+        with c2a: s2_noise   = st.checkbox("異音",     value=_b("S2-異音"),     key=f"s2no_{det_rma}")
+        with c2b: s2_stuck   = st.checkbox("卡頓",     value=_b("S2-卡頓"),     key=f"s2st_{det_rma}")
+        with c2c: s2_bearing = st.checkbox("軸承鬆動", value=_b("S2-軸承鬆動"), key=f"s2be_{det_rma}")
 
-    # ───────────── Step 5 拆解分析 ─────────────
-    st.markdown(
-        '<div style="font-size:13px;font-weight:700;color:var(--navy);'
-        'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
-        'Step 5 🔩 拆解分析</div>',
-        unsafe_allow_html=True,
-    )
-    c5a, c5b, c5c, _ = st.columns(4)
-    with c5a: s5_coil   = st.checkbox("線圈燒毀", value=_b("S5-線圈燒毀"), key=f"s5co_{det_rma}")
-    with c5b: s5_magnet = st.checkbox("磁鐵脫落", value=_b("S5-磁鐵脫落"), key=f"s5mg_{det_rma}")
-    with c5c: s5_rust   = st.checkbox("生鏽",     value=_b("S5-生鏽"),     key=f"s5rs_{det_rma}")
+        # ───────────── Step 3 電氣測試 ─────────────
+        st.markdown(
+            '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+            'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
+            'Step 3 ⚡ 電氣測試（三用電表）</div>',
+            unsafe_allow_html=True,
+        )
+        c3a, c3b, c3c = st.columns(3)
+        with c3a: s3_ab = st.number_input("AB 阻值 (Ω)", value=_f("S3-AB阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ab_{det_rma}")
+        with c3b: s3_bc = st.number_input("BC 阻值 (Ω)", value=_f("S3-BC阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3bc_{det_rma}")
+        with c3c: s3_ca = st.number_input("CA 阻值 (Ω)", value=_f("S3-CA阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ca_{det_rma}")
 
-    # ── 自動判定橫幅 ──
+        coil_bad, coil_dev = _coil_abnormal(s3_ab, s3_bc, s3_ca)
+        if s3_ab > 0 or s3_bc > 0 or s3_ca > 0:
+            if coil_bad:
+                st.error(f"⚠️ 線圈異常：三組阻值最大差異 **{coil_dev:.1f}%**（超過 10% 閾值），請確認線圈狀態")
+            else:
+                st.success(f"✅ 阻值均衡：差異 {coil_dev:.1f}%（< 10%），正常")
+
+        # ───────────── Step 4 通電測試 ─────────────
+        st.markdown(
+            '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+            'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
+            'Step 4 🔌 通電測試</div>',
+            unsafe_allow_html=True,
+        )
+        c4a, c4b, c4c, _ = st.columns(4)
+        with c4a: s4_vib   = st.checkbox("高震動",   value=_b("S4-高震動"),   key=f"s4vb_{det_rma}")
+        with c4b: s4_heat  = st.checkbox("高溫",     value=_b("S4-高溫"),     key=f"s4ht_{det_rma}")
+        with c4c: s4_start = st.checkbox("無法啟動", value=_b("S4-無法啟動"), key=f"s4st_{det_rma}")
+
+        # ───────────── Step 5 拆解分析 ─────────────
+        st.markdown(
+            '<div style="font-size:13px;font-weight:700;color:var(--navy);'
+            'border-left:4px solid #1a9b7a;padding-left:10px;margin:12px 0 6px">'
+            'Step 5 🔩 拆解分析</div>',
+            unsafe_allow_html=True,
+        )
+        c5a, c5b, c5c, _ = st.columns(4)
+        with c5a: s5_coil   = st.checkbox("線圈燒毀", value=_b("S5-線圈燒毀"), key=f"s5co_{det_rma}")
+        with c5b: s5_magnet = st.checkbox("磁鐵脫落", value=_b("S5-磁鐵脫落"), key=f"s5mg_{det_rma}")
+        with c5c: s5_rust   = st.checkbox("生鏽",     value=_b("S5-生鏽"),     key=f"s5rs_{det_rma}")
+
+        # 線圈燒毀確認提示
+        if coil_bad and s5_coil:
+            st.markdown(
+                '<div style="background:#e8f8f5;border:1px solid #a9dfbf;border-radius:6px;'
+                'padding:9px 14px;font-size:12.5px;color:var(--teal);font-weight:700;margin:6px 0">'
+                '✅ 已確認線圈燒毀，不需進行拆解分析</div>',
+                unsafe_allow_html=True,
+            )
+
+    # ── 系統自動判定橫幅 ──────────────────────────
     auto_msgs = []
-    if s1_shell and s1_axis:
-        auto_msgs.append(("保固外 / 人為撞擊", "#fff3f3", "#ffd0d0", "var(--cr)"))
+    if _is_early_scrap:
+        auto_msgs.append(("保固外 / 人為撞擊 — 已轉報廢流程", "#fff3f3", "#ffd0d0", "var(--cr)"))
     if s5_magnet:
         auto_msgs.append(("可能製程問題（建議保固內）", "#e8f8f5", "#a9dfbf", "var(--teal)"))
-    if coil_bad:
+    if coil_bad and not s5_coil:
         auto_msgs.append(("線圈異常 — 建議確認過載/堵轉紀錄", "#fef9e7", "#f9e79f", "var(--warn)"))
 
     if auto_msgs:
@@ -412,14 +478,14 @@ if not det_df.empty:
             )
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ── 最終結果 ──
+    # ── 最終結果 ──────────────────────────────────
     st.markdown(
         '<div style="font-size:13px;font-weight:700;color:var(--navy);'
         'border-left:4px solid var(--accent);padding-left:10px;margin:12px 0 6px">'
         '📋 最終結果</div>',
         unsafe_allow_html=True,
     )
-    fr1, fr2 = st.columns(2)
+    fr1, fr2, fr3 = st.columns(3)
     with fr1:
         final_verdict = st.text_input(
             "最終判定", value=_s("最終判定"),
@@ -435,7 +501,28 @@ if not det_df.empty:
             "維修方式", value=_s("維修方式"),
             placeholder="例：更換軸承、重繞線圈…", height=80, key=f"rm_{det_rma}",
         )
-        is_scrap = st.checkbox("是否報廢", value=_b("是否報廢"), key=f"scrap_{det_rma}")
+        saved_tj_det = _s("技術判定")
+        tj_det_idx   = TECH_JUDGMENT_LIST.index(saved_tj_det) if saved_tj_det in TECH_JUDGMENT_LIST else 0
+        # 轉報廢流程時預設「建議報廢」
+        if _is_early_scrap and not saved_tj_det:
+            tj_det_idx = TECH_JUDGMENT_LIST.index("建議報廢") if "建議報廢" in TECH_JUDGMENT_LIST else 0
+        tech_judg_det = st.selectbox(
+            "技術判定", TECH_JUDGMENT_LIST, index=tj_det_idx, key=f"tjd_{det_rma}",
+        )
+    with fr3:
+        # 轉報廢流程時預設勾選「是否報廢」
+        _scrap_default = _b("是否報廢") or _is_early_scrap
+        is_scrap = st.checkbox("是否報廢", value=_scrap_default, key=f"scrap_{det_rma}")
+        saved_ir = _s("是否可維修")
+        ir_opts  = ["", "可維修", "不可維修", "待評估"]
+        ir_idx   = ir_opts.index(saved_ir) if saved_ir in ir_opts else 0
+        is_repairable = st.selectbox(
+            "是否可維修", ir_opts, index=ir_idx, key=f"ir_{det_rma}",
+        )
+        cost_eval = st.text_input(
+            "維修成本評估", value=_s("維修成本評估"),
+            placeholder="例：軸承更換約 NT$300…", key=f"ce_{det_rma}",
+        )
 
     # ── 儲存 & PDF ──
     sv_col, pdf_col, _ = st.columns([2, 2, 3])
@@ -465,16 +552,22 @@ if not det_df.empty:
             "S5-線圈燒毀": "是" if s5_coil   else "否",
             "S5-磁鐵脫落": "是" if s5_magnet else "否",
             "S5-生鏽":     "是" if s5_rust   else "否",
-            "最終判定": final_verdict,
-            "保固判定": warranty_judg,
-            "維修方式": repair_method,
-            "是否報廢": "是" if is_scrap else "否",
+            "最終判定":    final_verdict,
+            "保固判定":    warranty_judg,
+            "技術判定":    tech_judg_det,
+            "維修方式":    repair_method,
+            "是否報廢":    "是" if is_scrap else "否",
+            "是否可維修":  is_repairable,
+            "維修成本評估": cost_eval,
             "五步檢測時間": now_str,
         }
         with st.spinner("儲存中..."):
             ok = update_detection(det_rma, det_data)
         if ok:
             st.success(f"✅ {det_rma} 五步檢測結果已儲存")
+            # 清除提前終止旗標
+            st.session_state.pop(_et_stop_key, None)
+            st.session_state.pop(_et_scrap_key, None)
             st.cache_data.clear()
             st.rerun()
         else:
