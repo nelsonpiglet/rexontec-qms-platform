@@ -194,6 +194,17 @@ section[data-testid="stSidebar"] > div:first-child { padding-top: 0 !important; 
 .btn-fail { background:var(--fail); color:#fff; border:none; border-radius:5px; padding:5px 12px; font-size:12px; font-weight:700; cursor:pointer; width:100%; }
 .btn-pend { background:var(--bg); color:var(--muted); border:1px solid var(--border); border-radius:5px; padding:5px 12px; font-size:12px; font-weight:700; cursor:pointer; width:100%; }
 
+/* ── 導覽按鈕：強制單行，字小一點，不換行 ─ */
+[data-testid*="stBaseButton"] p,
+[data-testid*="stBaseButton-secondary"] p,
+[data-testid*="stBaseButton-primary"] p,
+.stButton > button p {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  font-size: 12px !important;
+}
+
 /* ── RMA 成功卡 ─────────────────────────── */
 .rma-card {
   background: var(--white); border: 1px solid var(--border);
