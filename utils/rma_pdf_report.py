@@ -168,6 +168,63 @@ class RepairPDF(FPDF):
         self.set_draw_color(*C_BORDER)
         return w
 
+    def detect_row(self, step_label: str, items: list, alt: bool = False):
+        """Draw one row for five-step detection (checkboxes)."""
+        bg = C_LGRAY if alt else C_WHITE
+        self.set_fill_color(*bg)
+        row_h = 7.5
+        step_w = CONTENT_W * 0.24
+        y0 = self.get_y()
+        self.rect(MARGIN, y0, CONTENT_W, row_h, style="F")
+        self.hline(y0, lw=0.15)
+        self.set_xy(MARGIN + 2, y0 + 1.2)
+        self.set_font("B", size=8.5)
+        self._text_color(C_NAVY)
+        self.cell(step_w - 2, row_h - 2, step_label)
+        item_w = (CONTENT_W - step_w) / max(len(items), 1)
+        x = MARGIN + step_w
+        for label, value in items:
+            is_yes = str(value).strip() == "是"
+            self.set_xy(x, y0 + 1.2)
+            self.set_font("B", size=8.5)
+            self._text_color(C_RED if is_yes else C_MUTED)
+            self.cell(5, row_h - 2, "●" if is_yes else "○")
+            self.set_xy(x + 5, y0 + 1.2)
+            self.set_font("R", size=8.5)
+            self._text_color(C_TEXT)
+            self.cell(item_w - 6, row_h - 2, label)
+            x += item_w
+        self.set_y(y0 + row_h)
+
+    def detect_resistance_row(self, ab: float, bc: float, ca: float,
+                              abnormal: bool, alt: bool = False):
+        """Draw Step 3 resistance values row."""
+        bg = C_LGRAY if alt else C_WHITE
+        self.set_fill_color(*bg)
+        row_h = 7.5
+        step_w = CONTENT_W * 0.24
+        y0 = self.get_y()
+        self.rect(MARGIN, y0, CONTENT_W, row_h, style="F")
+        self.hline(y0, lw=0.15)
+        self.set_xy(MARGIN + 2, y0 + 1.2)
+        self.set_font("B", size=8.5)
+        self._text_color(C_NAVY)
+        self.cell(step_w - 2, row_h - 2, "Step3 電氣測試")
+        resist_w = (CONTENT_W - step_w) * 0.65 / 3
+        judge_w  = (CONTENT_W - step_w) * 0.35
+        x = MARGIN + step_w
+        for label in [f"AB: {ab:.2f} Ω", f"BC: {bc:.2f} Ω", f"CA: {ca:.2f} Ω"]:
+            self.set_xy(x, y0 + 1.2)
+            self.set_font("R", size=8.5)
+            self._text_color(C_TEXT)
+            self.cell(resist_w, row_h - 2, label)
+            x += resist_w
+        self.set_xy(x, y0 + 1.2)
+        self.set_font("B", size=8.5)
+        self._text_color(C_RED if abnormal else C_GREEN)
+        self.cell(judge_w, row_h - 2, "! 線圈異常" if abnormal else "√ 阻值均衡")
+        self.set_y(y0 + row_h)
+
     def sign_row(self, roles: list[str]):
         w_each = CONTENT_W / len(roles)
         y0     = self.get_y() + 2
@@ -275,8 +332,67 @@ def generate_repair_pdf(row: dict) -> bytes:
     pdf.text_block("故障詳細描述", str(row.get("故障詳細描述","") or ""), alt=False)
     pdf.ln(4)
 
+    # 4. 五步技術檢測（有資料才顯示）
+    _has_det = any(str(row.get(k, "")).strip() for k in [
+        "S1-外殼撞傷","S2-異音","S3-AB阻值","S4-高震動","S5-線圈燒毀","最終判定"
+    ])
+    if _has_det:
+        if pdf.get_y() > PAGE_H - 22 - 70:
+            pdf.add_page()
+        pdf.section_title("四", "五步技術檢測", "Five-Step Inspection")
+        _y = ("是","否")
+        pdf.detect_row(
+            "Step1 外觀檢測",
+            [("外殼撞傷", row.get("S1-外殼撞傷","否")),
+             ("軸心歪斜", row.get("S1-軸心歪斜","否")),
+             ("沙土侵入", row.get("S1-沙土侵入","否")),
+             ("螺絲裂痕", row.get("S1-螺絲裂痕","否"))],
+            alt=True,
+        )
+        pdf.detect_row(
+            "Step2 手感測試",
+            [("異音",     row.get("S2-異音","否")),
+             ("卡頓",     row.get("S2-卡頓","否")),
+             ("軸承鬆動", row.get("S2-軸承鬆動","否"))],
+            alt=False,
+        )
+        try:
+            _ab = float(row.get("S3-AB阻值",0) or 0)
+            _bc = float(row.get("S3-BC阻值",0) or 0)
+            _ca = float(row.get("S3-CA阻值",0) or 0)
+        except Exception:
+            _ab = _bc = _ca = 0.0
+        pdf.detect_resistance_row(_ab, _bc, _ca,
+                                  str(row.get("S3-線圈異常","否")) == "是",
+                                  alt=True)
+        pdf.detect_row(
+            "Step4 通電測試",
+            [("高震動",   row.get("S4-高震動","否")),
+             ("高溫",     row.get("S4-高溫","否")),
+             ("無法啟動", row.get("S4-無法啟動","否"))],
+            alt=False,
+        )
+        pdf.detect_row(
+            "Step5 拆解分析",
+            [("線圈燒毀", row.get("S5-線圈燒毀","否")),
+             ("磁鐵脫落", row.get("S5-磁鐵脫落","否")),
+             ("生鏽",     row.get("S5-生鏽","否"))],
+            alt=True,
+        )
+        pdf.data_row([("最終判定", row.get("最終判定","")),
+                      ("保固判定", row.get("保固判定",""))], alt=False)
+        pdf.data_row([("維修方式", row.get("維修方式","")),
+                      ("是否報廢", row.get("是否報廢",""))], alt=True)
+        det_time = str(row.get("五步檢測時間","") or "")
+        if det_time:
+            pdf.data_row([("檢測時間", det_time), ("", "")], alt=False)
+        pdf.ln(4)
+        _sec5 = "五"
+    else:
+        _sec5 = "四"
+
     # 5. 維修記錄
-    pdf.section_title("四", "維修記錄", "Repair Record")
+    pdf.section_title(_sec5, "維修記錄", "Repair Record")
     pdf.data_row([("目前狀態", STATUS_EMOJI_TEXT.get(status, status)), ("", "")], alt=True)
     pdf.text_block("技術檢測備註", str(row.get("內部-技術檢測","") or ""), alt=False)
     pdf.text_block("保固判定",     str(row.get("內部-保固判定", "") or ""), alt=True)
@@ -287,10 +403,13 @@ def generate_repair_pdf(row: dict) -> bytes:
     raw_photos = str(row.get("故障照片連結", "") or "")
     photo_urls = [u.strip() for u in raw_photos.split(",") if u.strip()]
 
+    _sec_photo = "六" if _has_det else "五"
+    _sec_sign  = "七" if _has_det else "六"
+
     if photo_urls:
         if pdf.get_y() > PAGE_H - 22 - 80:
             pdf.add_page()
-        pdf.section_title("六", "故障照片", "Fault Photos")
+        pdf.section_title(_sec_photo, "故障照片", "Fault Photos")
         pdf.ln(2)
 
         img_w  = (CONTENT_W - 6) / 2
@@ -333,7 +452,7 @@ def generate_repair_pdf(row: dict) -> bytes:
     if pdf.get_y() > PAGE_H - 22 - 50:
         pdf.add_page()
 
-    pdf.section_title("五", "簽核確認", "Approval")
+    pdf.section_title(_sec_sign, "簽核確認", "Approval")
     pdf.ln(2)
     pdf.sign_row(["業務確認", "維修技術員", "工程主管"])
 
