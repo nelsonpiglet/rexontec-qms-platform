@@ -733,6 +733,47 @@ def upload_photo_to_drive(
 
 
 # ─────────────────────────────────────────────────────
+# Config 工作表（系統設定 key-value 儲存，含使用者帳號）
+# ─────────────────────────────────────────────────────
+SHEET_CONFIG = "Config"
+COLS_CONFIG  = ["key", "value", "updated_at"]
+
+
+def get_config_json(key: str):
+    """
+    從 Google Sheets Config 工作表讀取 JSON 設定。
+    key 不存在時回傳 None；解析失敗回傳 None。
+    """
+    try:
+        ws   = _open_sheet(SHEET_CONFIG, COLS_CONFIG)
+        rows = ws.get_all_values()
+        for row in rows[1:]:       # 跳過標題列
+            if row and row[0] == key:
+                raw = row[1] if len(row) > 1 else ""
+                return json.loads(raw) if raw else None
+        return None
+    except Exception:
+        return None
+
+
+def set_config_json(key: str, data) -> None:
+    """
+    將 JSON 設定寫入 Google Sheets Config 工作表。
+    key 已存在時更新，否則新增一列。
+    """
+    ws      = _open_sheet(SHEET_CONFIG, COLS_CONFIG)
+    _ensure_headers(ws, COLS_CONFIG)
+    rows    = ws.get_all_values()
+    now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+    val_str = json.dumps(data, ensure_ascii=False)
+    for i, row in enumerate(rows[1:], start=2):
+        if row and row[0] == key:
+            ws.update(f"A{i}:C{i}", [[key, val_str, now_str]])
+            return
+    ws.append_row([key, val_str, now_str], value_input_option="USER_ENTERED")
+
+
+# ─────────────────────────────────────────────────────
 # 輔助
 # ─────────────────────────────────────────────────────
 def _all_judged(results: dict, sections: list) -> bool:
