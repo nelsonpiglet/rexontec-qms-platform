@@ -6,7 +6,6 @@ import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
 from utils.rma_gsheet       import load_all_cases, update_status, get_photos, delete_case, update_detection
-from utils.rma_pdf_report   import generate_repair_pdf
 from utils.style             import QMS_CSS, topbar, page_header, stat_cards, status_badge, STATUS_EMOJI, gsheet_error_banner
 from utils.rma_email_notify  import notify_case_closed
 
@@ -461,6 +460,7 @@ if not det_df.empty:
 
     if gen_pdf:
         try:
+            from utils.rma_pdf_report import generate_repair_pdf
             latest = load_all_cases()
             r_pdf  = latest[latest["RMA編號"] == det_rma]
             if r_pdf.empty:
