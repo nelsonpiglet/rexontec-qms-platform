@@ -22,7 +22,7 @@ require_login()
 user_info_bar()
 
 # ── 平台導覽列 ──────────────────────────────────────
-n1, n2, n3, n4, n5, n6, n7, n8, n9 = st.columns([1, 1, 1, 1, 1, 1.3, 1, 1, 1.7])
+n1, n2, n3, n4, n5, n6, n7, n8, n9 = st.columns([1, 1, 1, 1, 1, 1.4, 1, 1, 1.6])
 with n1:
     if st.button("🔬 檢驗品質", use_container_width=True):
         st.switch_page("pages/01_出廠檢驗輸入.py")
