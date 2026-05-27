@@ -57,7 +57,8 @@ def upload_photos(uploaded_files: list, rma_id: str) -> list[str]:
                 fileId=fid,
                 body={"type": "anyone", "role": "reader"},
             ).execute()
-            urls.append(f"https://drive.google.com/uc?export=view&id={fid}")
+            # thumbnail?id= 是 Google Drive 目前唯一穩定的直連格式
+            urls.append(f"https://drive.google.com/thumbnail?id={fid}&sz=w1600")
         return urls
 
     except Exception as e:

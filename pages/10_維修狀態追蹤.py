@@ -4,6 +4,8 @@ REXONTEC 力科品質指揮平台 — 維修保養系統
 """
 import streamlit as st
 import pandas as pd
+import re
+import urllib.request
 from datetime import datetime, timedelta
 from utils.rma_gsheet       import load_all_cases, update_status, get_photos, delete_case, update_detection
 from utils.style             import QMS_CSS, topbar, page_header, stat_cards, status_badge, STATUS_EMOJI, gsheet_error_banner
@@ -43,6 +45,26 @@ with c6:
         st.switch_page("pages/14_維修報告.py")
 
 st.markdown(page_header("維修狀態追蹤", "Repair Status Tracking", "TRK"), unsafe_allow_html=True)
+
+def _gdrive_bytes(url: str):
+    """
+    從 Google Drive URL 取得圖片 bytes（相容 uc?export=view 及 thumbnail?id= 格式）。
+    失敗回傳 None。
+    """
+    try:
+        m = re.search(r'[?&]id=([A-Za-z0-9_\-]+)', url)
+        if not m:
+            m = re.search(r'/d/([A-Za-z0-9_\-]+)', url)
+        if not m:
+            return None
+        fid      = m.group(1)
+        thumb_url = f"https://drive.google.com/thumbnail?id={fid}&sz=w1200"
+        req  = urllib.request.Request(thumb_url, headers={"User-Agent": "Mozilla/5.0"})
+        data = urllib.request.urlopen(req, timeout=10).read()
+        return data if len(data) > 512 else None
+    except Exception:
+        return None
+
 
 STATUS_LIST   = ["待收件","已收件","初診中","等待零件","維修中","待QC","已出廠","報廢通知","已取消"]
 DONE_STATUS   = {"已出廠","報廢通知","已取消"}
@@ -496,20 +518,32 @@ if photo_rma and photo_rma != "— 選擇案件 —":
     with st.spinner("載入照片..."):
         urls = get_photos(photo_rma)
     if urls:
-        st.markdown(f'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">共 {len(urls)} 張照片</div>',
-                    unsafe_allow_html=True)
-        img_cols = st.columns(min(len(urls), 4))
-        for col, url in zip(img_cols, urls):
+        st.markdown(
+            f'<div style="font-size:12px;color:var(--muted);margin-bottom:8px">共 {len(urls)} 張照片</div>',
+            unsafe_allow_html=True,
+        )
+        show_urls = urls[:8]
+        img_cols  = st.columns(min(len(show_urls), 4))
+        for col, url in zip(img_cols * 2, show_urls):
             with col:
-                try:
-                    st.image(url, use_container_width=True)
-                except Exception:
-                    st.markdown(f'<a href="{url}" target="_blank">📷 查看照片</a>',
-                                unsafe_allow_html=True)
-        if len(urls) > 4:
-            for url in urls[4:]:
-                st.markdown(f'<a href="{url}" target="_blank" style="font-size:12px">📷 {url}</a>',
-                            unsafe_allow_html=True)
+                img_data = _gdrive_bytes(url)
+                if img_data:
+                    st.image(img_data, use_container_width=True)
+                else:
+                    # 取不到 bytes 時改用可點擊連結
+                    m = re.search(r'[?&]id=([A-Za-z0-9_\-]+)', url)
+                    fid  = m.group(1) if m else ""
+                    view = f"https://drive.google.com/file/d/{fid}/view" if fid else url
+                    st.markdown(
+                        f'<a href="{view}" target="_blank" style="font-size:12px">📷 在 Drive 查看</a>',
+                        unsafe_allow_html=True,
+                    )
+        if len(urls) > 8:
+            st.markdown(
+                f'<div style="font-size:11px;color:var(--muted)">另有 {len(urls)-8} 張，'
+                f'請至 <a href="#" target="_blank">Google Drive</a> 查看</div>',
+                unsafe_allow_html=True,
+            )
     else:
         st.info("此案件尚未上傳故障照片。")
 

@@ -417,12 +417,20 @@ def generate_repair_pdf(row: dict) -> bytes:
         shown  = 0
         x_pos  = [MARGIN, MARGIN + img_w + 6]
 
-        import urllib.request, io as _io
+        import urllib.request, re as _re, io as _io
+
+        def _gdrive_fetch(u):
+            """轉換 uc?export=view → thumbnail?id=，再 fetch bytes"""
+            m = _re.search(r'[?&]id=([A-Za-z0-9_\-]+)', u)
+            if m:
+                u = f"https://drive.google.com/thumbnail?id={m.group(1)}&sz=w1200"
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+            return urllib.request.urlopen(req, timeout=10).read()
+
         for i, url in enumerate(photo_urls[:6]):
             col_idx = i % 2
             try:
-                req  = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-                data = urllib.request.urlopen(req, timeout=8).read()
+                data = _gdrive_fetch(url)
                 ext  = "jpg" if b"\xff\xd8" in data[:4] else "png"
                 pdf.image(_io.BytesIO(data),
                           x=x_pos[col_idx],
