@@ -280,34 +280,20 @@ with st.expander("📋 基本資料 / 表頭", expanded=True):
     with c9:
         hdr_insp     = st.selectbox("檢驗員 *", get_inspectors(), key="hdr_insp")
 
-    c10, c11, c12 = st.columns(3)
-    if _use_oqc_tpl:
-        # 馬達 OQC 模板：顯示檢驗方法 + 判定結果（不顯示品保主管）
-        with c10:
-            hdr_insp_method = st.selectbox(
-                "檢驗方法 *", ["正常", "加嚴", "減量"], key="hdr_method",
-                help="正常 = Normal / 加嚴 = Tightened / 減量 = Reduced (MIL-STD-105E)",
-            )
-        with c11:
-            hdr_verdict = st.selectbox(
-                "判定結果 *", ["允收", "不允收"], key="hdr_verdict",
-            )
-        hdr_super   = ""
-        hdr_mfg_grp = "─"
-        hdr_mfg_ord = ""
-    else:
-        hdr_insp_method = "正常"
-        hdr_verdict     = ""
-        with c10:
-            hdr_super = st.selectbox("主管(品保) *", get_supervisors(), key="hdr_super")
-        if is_esc:
-            with c11:
-                hdr_mfg_grp = st.selectbox("製造組別", get_mfg_groups(), key="hdr_mfg")
-            with c12:
-                hdr_mfg_ord = st.text_input("製造編號/櫃號", placeholder="例：ESC-2026-A-001", key="hdr_ord")
-        else:
-            hdr_mfg_grp = "─"
-            hdr_mfg_ord = ""
+    c10, c11, _ = st.columns(3)
+    with c10:
+        hdr_insp_method = st.selectbox(
+            "檢驗方法 *", ["正常", "加嚴", "減量"], key="hdr_method",
+            help="正常 = Normal / 加嚴 = Tightened / 減量 = Reduced (MIL-STD-105E)",
+        )
+    with c11:
+        hdr_verdict = st.selectbox(
+            "判定結果 *", ["允收", "不允收"], key="hdr_verdict",
+        )
+    # 保留相容舊 schema（不顯示於表單，但仍傳遞給 gsheet/PDF）
+    hdr_super   = ""
+    hdr_mfg_grp = "─"
+    hdr_mfg_ord = ""
 
     # 公司別 + 送樣
     st.markdown("<hr style='border:none;border-top:1px dashed var(--border);margin:8px 0'>",
@@ -917,6 +903,45 @@ note = st.text_area(
 
 
 # ════════════════════════════════════════════════════
+# ⑨-B 簽核確認
+# ════════════════════════════════════════════════════
+st.markdown("<hr style='border:none;border-top:1px solid var(--border);margin:16px 0 12px'>",
+            unsafe_allow_html=True)
+st.markdown("""
+<div class="card-header" style="border-radius:7px 7px 0 0;border:1px solid var(--border)">
+  <div class="card-title"><div class="card-dot" style="background:var(--blue)"></div>✍️ 簽核確認</div>
+</div>
+""", unsafe_allow_html=True)
+
+_all_inspectors  = get_inspectors()
+_all_supervisors = get_supervisors()
+sig_c1, sig_c2, sig_c3 = st.columns(3)
+with sig_c1:
+    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:4px'>檢驗員</div>",
+                unsafe_allow_html=True)
+    _insp_idx = _all_inspectors.index(hdr_insp) if hdr_insp in _all_inspectors else 0
+    sig_inspector = st.selectbox("檢驗員姓名", _all_inspectors,
+                                  index=_insp_idx, key="sig_insp",
+                                  label_visibility="collapsed")
+    sig_insp_date = st.date_input("日期", value=date.today(),
+                                   key="sig_insp_date", label_visibility="visible")
+with sig_c2:
+    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:4px'>品保主管</div>",
+                unsafe_allow_html=True)
+    sig_supervisor = st.selectbox("品保主管姓名", _all_supervisors,
+                                   key="sig_super", label_visibility="collapsed")
+    sig_super_date = st.date_input("日期", value=date.today(),
+                                    key="sig_super_date", label_visibility="visible")
+with sig_c3:
+    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:4px'>核准</div>",
+                unsafe_allow_html=True)
+    sig_approver  = st.text_input("核准人員", placeholder="核准人員姓名",
+                                   key="sig_approver", label_visibility="collapsed")
+    sig_appr_date = st.date_input("日期", value=date.today(),
+                                   key="sig_appr_date", label_visibility="visible")
+
+
+# ════════════════════════════════════════════════════
 # ⑩ 提交按鈕
 # ════════════════════════════════════════════════════
 # ════════════════════════════════════════════════════
@@ -943,8 +968,14 @@ with st.expander("📄 匯出 PDF 報告（填寫中途亦可下載）", expande
             "mfg_order_no": st.session_state.get("hdr_ord", ""),
             "is_sample":    st.session_state.get("oqc_is_sample", False),
             "company":      "rexon" if "力山" in _co_raw else "rexontec",
-            "insp_method":  st.session_state.get("hdr_method", "正常"),
-            "verdict":      st.session_state.get("hdr_verdict", ""),
+            "insp_method":   st.session_state.get("hdr_method", "正常"),
+            "verdict":       st.session_state.get("hdr_verdict", ""),
+            "sig_inspector": st.session_state.get("sig_insp", ""),
+            "sig_insp_date": str(st.session_state.get("sig_insp_date", "")),
+            "sig_supervisor":st.session_state.get("sig_super", ""),
+            "sig_super_date":str(st.session_state.get("sig_super_date", "")),
+            "sig_approver":  st.session_state.get("sig_approver", ""),
+            "sig_appr_date": str(st.session_state.get("sig_appr_date", "")),
         }
         if st.button("🖨️ 生成 PDF", key="gen_pdf_btn", type="primary"):
             with st.spinner("正在生成 PDF…"):
@@ -1011,8 +1042,14 @@ if submit_clicked:
         "mfg_order_no": hdr_mfg_ord if is_esc else "",
         "is_sample":    st.session_state.get("oqc_is_sample", False),
         "company":      "rexon" if "力山" in _co_submit else "rexontec",
-        "insp_method":  hdr_insp_method,
-        "verdict":      hdr_verdict,
+        "insp_method":   hdr_insp_method,
+        "verdict":       hdr_verdict,
+        "sig_inspector": sig_inspector,
+        "sig_insp_date": str(sig_insp_date),
+        "sig_supervisor":sig_supervisor,
+        "sig_super_date":str(sig_super_date),
+        "sig_approver":  sig_approver,
+        "sig_appr_date": str(sig_appr_date),
     }
 
     with st.spinner("寫入 Google Sheet 中…"):

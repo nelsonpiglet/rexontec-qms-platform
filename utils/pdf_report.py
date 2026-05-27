@@ -285,6 +285,7 @@ def generate_pdf(
         return [PB(label1), P(val1), PB(label2), P(val2)]
 
     is_esc = product_type == "esc"
+    _vrd = header.get("verdict", "") or "─"
     info_rows = [
         hrow("機種", header.get("model", "─"),
              "料號", header.get("part_no", "─")),
@@ -294,14 +295,9 @@ def generate_pdf(
              "抽驗數量", str(header.get("sample_qty", "─"))),
         hrow("檢驗日期", header.get("date", "─"),
              "檢驗員", header.get("inspector", "─")),
-        hrow("品保主管", header.get("supervisor", "─"),
-             "製造組別", header.get("mfg_group", "─") if is_esc else "─"),
+        hrow("檢驗方法", header.get("insp_method", "正常"),
+             "判定結果", _vrd),
     ]
-    if is_esc and header.get("mfg_order_no"):
-        info_rows.append(hrow("製造編號/櫃號", header.get("mfg_order_no", "─"), "", ""))
-    if not is_esc and header.get("insp_method"):
-        info_rows.append(hrow("檢驗方法", header.get("insp_method", "─"),
-                              "判定結果", header.get("verdict", "─")))
 
     cw = avail_w / 4
     info_tbl = Table(info_rows, colWidths=[cw * 0.55, cw * 0.95, cw * 0.55, cw * 0.95])
@@ -608,18 +604,36 @@ def generate_pdf(
     s_date  = S("sdate",  fontSize=7.5, textColor=colors.HexColor("#6b7c93"),
                 leading=11, alignment=1)
 
-    sig_roles = ["檢驗員", "品保主管", "核准"]
-    # Row 1: role titles
-    row_titles = [Paragraph(r, s_role) for r in sig_roles]
-    # Row 2: empty — becomes the signature writing area
-    row_space  = [Spacer(1, 1)] * 3
-    # Row 3: date prompt
-    row_date   = [Paragraph("日期：___/___/___", s_date)] * 3
+    # 實際簽核人名與日期（從表頭帶入，空值保留空白欄）
+    _snames = [
+        header.get("sig_inspector", ""),
+        header.get("sig_supervisor", ""),
+        header.get("sig_approver", ""),
+    ]
+    _sdates = [
+        header.get("sig_insp_date", ""),
+        header.get("sig_super_date", ""),
+        header.get("sig_appr_date", ""),
+    ]
+    s_signame = SB("signame", fontSize=10, textColor=C_NAVY, leading=14, alignment=1)
 
+    def _sig_name_cell(name):
+        return (Paragraph(name, s_signame) if name else Spacer(1, 1))
+
+    def _sig_date_cell(d):
+        txt = f"日期：{d}" if d else "日期：___/___/___"
+        return Paragraph(txt, s_date)
+
+    sig_roles  = ["檢驗員", "品保主管", "核准"]
+    row_titles = [Paragraph(r, s_role) for r in sig_roles]
+    row_names  = [_sig_name_cell(n) for n in _snames]
+    row_date   = [_sig_date_cell(d) for d in _sdates]
+
+    _has_name  = any(_snames)
     sig_tbl = Table(
-        [row_titles, row_space, row_date],
+        [row_titles, row_names, row_date],
         colWidths=[box_w] * 3,
-        rowHeights=[None, 18 * mm, None],
+        rowHeights=[None, 8 * mm if _has_name else 18 * mm, None],
     )
     sig_tbl.setStyle(TableStyle([
         # Outer border + inner vertical dividers
