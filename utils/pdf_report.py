@@ -169,12 +169,13 @@ def generate_pdf(
     _reg_fonts()
 
     # ── 決定頁面方向 ─────────────────────────────────
+    # 固定橫向 A4（297×210mm）：SN 欄更寬裕、字體更易辨識
     n_units = len(units)
-    pagesize = landscape(A4) if n_units > 5 else A4
+    pagesize = landscape(A4)
     W, H = pagesize
     LM = RM = 14 * mm
-    TM = BM = 14 * mm
-    avail_w = W - LM - RM
+    TM = BM = 12 * mm
+    avail_w = W - LM - RM   # ≈ 269 mm
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -190,13 +191,13 @@ def generate_pdf(
     def SB(name, **kw):
         return ParagraphStyle(name, fontName=_FB, **kw)
 
-    s_title  = SB("title",  fontSize=16, textColor=C_WHITE,  leading=20)
-    s_sub    = S("sub",    fontSize=9,  textColor=colors.HexColor("#b0bec5"), leading=13)
-    s_body   = S("body",   fontSize=8.5, textColor=C_NAVY,  leading=12)
-    s_bold   = SB("bold",  fontSize=8.5, textColor=C_NAVY,  leading=12)
-    s_small  = S("small",  fontSize=7.5, textColor=colors.HexColor("#6b7c93"), leading=10)
-    s_center = SB("center",fontSize=8.5, textColor=C_NAVY,  leading=12, alignment=1)
-    s_wcenter= SB("wcenter",fontSize=8,  textColor=C_WHITE,  leading=11, alignment=1)
+    s_title  = SB("title",  fontSize=18, textColor=C_WHITE,  leading=22)
+    s_sub    = S("sub",    fontSize=10, textColor=colors.HexColor("#b0bec5"), leading=14)
+    s_body   = S("body",   fontSize=10, textColor=C_NAVY,  leading=14)
+    s_bold   = SB("bold",  fontSize=10, textColor=C_NAVY,  leading=14)
+    s_small  = S("small",  fontSize=9,  textColor=colors.HexColor("#6b7c93"), leading=12)
+    s_center = SB("center",fontSize=10, textColor=C_NAVY,  leading=14, alignment=1)
+    s_wcenter= SB("wcenter",fontSize=9.5,textColor=C_WHITE, leading=12, alignment=1)
 
     def P(text, style=None):
         return Paragraph(str(text) if text is not None else "─", style or s_body)
@@ -221,10 +222,10 @@ def generate_pdf(
     gen_time = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     # 標題帶樣式
-    s_co_name  = SB("coname",  fontSize=16, textColor=C_ORANGE, leading=20)
-    s_co_sub   = S ("cosub",   fontSize=8.5, textColor=colors.HexColor("#b0bec5"), leading=12)
-    s_rpt_type = SB("rpttype", fontSize=15, textColor=C_WHITE,  leading=19, alignment=2)
-    s_rpt_id   = S ("rptid",   fontSize=8,  textColor=colors.HexColor("#9aafc4"), leading=11, alignment=2)
+    s_co_name  = SB("coname",  fontSize=19, textColor=C_ORANGE, leading=23)
+    s_co_sub   = S ("cosub",   fontSize=10, textColor=colors.HexColor("#b0bec5"), leading=14)
+    s_rpt_type = SB("rpttype", fontSize=18, textColor=C_WHITE,  leading=22, alignment=2)
+    s_rpt_id   = S ("rptid",   fontSize=9,  textColor=colors.HexColor("#9aafc4"), leading=12, alignment=2)
 
     ACCENT_W = 5 * mm
     LEFT_W   = (avail_w - ACCENT_W) * 0.62
@@ -306,9 +307,9 @@ def generate_pdf(
         ("BACKGROUND",  (2, 0), (2, -1), C_LGRAY),
         ("GRID",        (0, 0), (-1, -1), 0.4, colors.HexColor("#dce3ec")),
         ("VALIGN",      (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",  (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING",(0,0), (-1, -1), 5),
-        ("LEFTPADDING", (0, 0), (-1, -1), 8),
+        ("TOPPADDING",  (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING",(0,0), (-1, -1), 7),
+        ("LEFTPADDING", (0, 0), (-1, -1), 10),
     ]))
     story.append(info_tbl)
     story.append(Spacer(1, 5 * mm))
@@ -316,16 +317,15 @@ def generate_pdf(
     # ══════════════════════════════════════════════════
     # 3. 檢驗結果表格（依 section）
     # ══════════════════════════════════════════════════
-    # 欄寬計算
-    #  固定欄：No(12) Grade(12) 項目名稱(50) 規格標準(55) 工具(25) = 154mm + units
-    fixed_w = [12*mm, 12*mm, 50*mm, 55*mm, 20*mm]
+    # 欄寬計算（橫向 A4 avail_w ≈ 269mm）
+    #  固定欄：No(14) Grade(14) 項目名稱(68) 規格標準(62) 工具(24) = 182mm + units
+    fixed_w = [14*mm, 14*mm, 68*mm, 62*mm, 24*mm]
     fixed_total = sum(fixed_w)
-    unit_w_each = max(12*mm, (avail_w - fixed_total) / max(n_units, 1))
-    # 若 unit 欄太窄就縮短固定欄
-    if unit_w_each < 10*mm:
-        # 縮小規格欄
-        fixed_w[3] = max(35*mm, avail_w - fixed_total + fixed_w[3] - n_units * 10*mm)
-        unit_w_each = max(10*mm, (avail_w - sum(fixed_w)) / n_units)
+    unit_w_each = max(15*mm, (avail_w - fixed_total) / max(n_units, 1))
+    # 若 unit 欄仍太窄（理論上橫向不會發生），縮短規格欄
+    if unit_w_each < 13*mm:
+        fixed_w[3] = max(40*mm, avail_w - fixed_total + fixed_w[3] - n_units * 13*mm)
+        unit_w_each = max(13*mm, (avail_w - sum(fixed_w)) / n_units)
 
     col_widths = fixed_w + [unit_w_each] * n_units
 
@@ -364,15 +364,15 @@ def generate_pdf(
             [[Paragraph(
                 f'<b>{sec_id} | {sec_label}</b>'
                 f'{" - " + sec_sub if sec_sub else ""}',
-                SB("sh2", fontSize=8.5, textColor=C_WHITE, leading=12)
+                SB("sh2", fontSize=10, textColor=C_WHITE, leading=14)
             )]],
             colWidths=[avail_w],
         )
         sec_span.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), C_NAVY),
-            ("TOPPADDING",   (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 10),
+            ("TOPPADDING",   (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 12),
         ]))
         story.append(sec_span)
 
@@ -383,13 +383,13 @@ def generate_pdf(
             ("BACKGROUND",   (0, 0), (-1, 0), C_BLUE),
             ("TEXTCOLOR",    (0, 0), (-1, 0), C_WHITE),
             ("FONTNAME",     (0, 0), (-1, 0), _FB),
-            ("FONTSIZE",     (0, 0), (-1, -1), 8),
+            ("FONTSIZE",     (0, 0), (-1, -1), 9.5),
             ("GRID",         (0, 0), (-1, -1), 0.3, colors.HexColor("#c5cfe0")),
             ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING",   (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
             ("ALIGN",        (0, 0), (1, -1), "CENTER"),
         ]
 
@@ -490,7 +490,7 @@ def generate_pdf(
                 P(", ".join(fail_units)),
             ])
         ng_tbl = Table(ng_rows,
-                       colWidths=[18*mm, 18*mm, 70*mm, avail_w-106*mm],
+                       colWidths=[22*mm, 22*mm, avail_w*0.38, avail_w-44*mm-avail_w*0.38],
                        repeatRows=1)
         ng_style = TableStyle([
             ("BACKGROUND",   (0, 0), (-1, 0), C_CR),
@@ -500,17 +500,17 @@ def generate_pdf(
             ("GRID",         (0, 0), (-1, -1), 0.3, colors.HexColor("#f5b7b1")),
             ("TEXTCOLOR",    (0, 1), (1, -1), C_CR),
             ("FONTNAME",     (0, 1), (1, -1), _FB),
-            ("FONTSIZE",     (0, 0), (-1, -1), 8),
+            ("FONTSIZE",     (0, 0), (-1, -1), 9.5),
             ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-            ("TOPPADDING",   (0, 0), (-1, -1), 4),
-            ("BOTTOMPADDING",(0, 0), (-1, -1), 4),
-            ("LEFTPADDING",  (0, 0), (-1, -1), 5),
+            ("TOPPADDING",   (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+            ("LEFTPADDING",  (0, 0), (-1, -1), 6),
             ("ALIGN",        (0, 0), (1, -1), "CENTER"),
         ])
         ng_tbl.setStyle(ng_style)
 
         ng_hdr = Table([[P("NG 項目警示摘要",
-                           SB("nh", fontSize=9, textColor=C_WHITE, leading=13))]],
+                           SB("nh", fontSize=10, textColor=C_WHITE, leading=14))]],
                        colWidths=[avail_w])
         ng_hdr.setStyle(TableStyle([
             ("BACKGROUND",   (0, 0), (-1, -1), C_CR),
@@ -537,7 +537,7 @@ def generate_pdf(
             ("TOPPADDING",   (0, 0), (-1, -1), 6),
             ("BOTTOMPADDING",(0, 0), (-1, -1), 6),
             ("LEFTPADDING",  (0, 0), (-1, -1), 8),
-            ("FONTSIZE",     (0, 0), (-1, -1), 8),
+            ("FONTSIZE",     (0, 0), (-1, -1), 9.5),
         ]))
         story.append(note_tbl)
         story.append(Spacer(1, 3 * mm))
@@ -561,9 +561,9 @@ def generate_pdf(
     verdict_data = [
         [
             Paragraph(vrd_text,
-                      SB("vrd", fontSize=14, textColor=vrd_col, leading=18, alignment=1)),
+                      SB("vrd", fontSize=17, textColor=vrd_col, leading=21, alignment=1)),
             P(f"CR：{cr_ng} 項  MA：{ma_ng} 項  MI：{mi_ng} 項",
-              S("vs", fontSize=8, textColor=colors.HexColor("#6b7c93"), leading=12,
+              S("vs", fontSize=11, textColor=colors.HexColor("#6b7c93"), leading=15,
                 alignment=1)),
         ]
     ]
@@ -587,7 +587,7 @@ def generate_pdf(
     story.append(Spacer(1, 2 * mm))
     approval_hdr = Table(
         [[Paragraph("簽核確認  Approval",
-                    SB("ah", fontSize=9, textColor=C_WHITE, leading=13))]],
+                    SB("ah", fontSize=11, textColor=C_WHITE, leading=15))]],
         colWidths=[avail_w],
     )
     approval_hdr.setStyle(TableStyle([
@@ -600,9 +600,9 @@ def generate_pdf(
 
     # 3 boxes: role title | spacer (signature area) | date
     box_w   = avail_w / 3
-    s_role  = SB("role",  fontSize=9,   textColor=C_NAVY,  leading=14, alignment=1)
-    s_date  = S("sdate",  fontSize=7.5, textColor=colors.HexColor("#6b7c93"),
-                leading=11, alignment=1)
+    s_role  = SB("role",  fontSize=11,  textColor=C_NAVY,  leading=16, alignment=1)
+    s_date  = S("sdate",  fontSize=9,   textColor=colors.HexColor("#6b7c93"),
+                leading=12, alignment=1)
 
     # 實際簽核人名與日期（從表頭帶入，空值保留空白欄）
     _snames = [
@@ -615,7 +615,7 @@ def generate_pdf(
         header.get("sig_super_date", ""),
         header.get("sig_appr_date", ""),
     ]
-    s_signame = SB("signame", fontSize=10, textColor=C_NAVY, leading=14, alignment=1)
+    s_signame = SB("signame", fontSize=12, textColor=C_NAVY, leading=16, alignment=1)
 
     def _sig_name_cell(name):
         return (Paragraph(name, s_signame) if name else Spacer(1, 1))
@@ -651,7 +651,7 @@ def generate_pdf(
         # Alignment
         ("ALIGN",        (0, 0), (-1, -1), "CENTER"),
         ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
-        ("FONTSIZE",     (0, 0), (-1, -1), 8),
+        ("FONTSIZE",     (0, 0), (-1, -1), 10),
     ]))
     story.append(sig_tbl)
 
