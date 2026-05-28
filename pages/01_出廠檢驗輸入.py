@@ -154,6 +154,7 @@ if st.session_state.submitted_id:
                 results      = _pdf_results,
                 units        = _pdf_units,
                 note         = _pdf_note,
+                chart_image  = st.session_state.get("_last_chart_image"),
             )
             st.download_button(
                 "📄 下載 PDF 報告",
@@ -916,6 +917,17 @@ if is_esc:
                 st.success(f"已儲存！下次自動顯示。")
                 st.rerun()
 
+    # ── 收集圖片 bytes 供 PDF 使用 ──────────────────────
+    if found_img:
+        try:
+            with open(found_img, "rb") as _cf:
+                st.session_state["_esc_chart_bytes"] = _cf.read()
+        except Exception:
+            st.session_state["_esc_chart_bytes"] = None
+    else:
+        _up = st.session_state.get("script_img_upload")
+        st.session_state["_esc_chart_bytes"] = _up.getvalue() if _up else None
+
     st.caption("（註：運轉功能測試於 1000µs - 1900µs 區間之動態響應與負載穩定性）")
     st.markdown("<div style='margin-bottom:10px'></div>", unsafe_allow_html=True)
 
@@ -1082,6 +1094,7 @@ with st.expander("📄 匯出 PDF 報告（填寫中途亦可下載）", expande
                     results      = st.session_state.results,
                     units        = units,
                     note         = st.session_state.get("note_input", ""),
+                    chart_image  = st.session_state.get("_esc_chart_bytes") if product_type == "esc" else None,
                 )
                 st.download_button(
                     "⬇️ 點此下載 PDF",
@@ -1171,12 +1184,13 @@ if submit_clicked:
                 note         = note,
             )
             # 保存本次資料供提交成功頁面的 PDF 下載
-            st.session_state._last_pt      = product_type
-            st.session_state._last_header  = header
-            st.session_state._last_results = dict(st.session_state.results)
-            st.session_state._last_units   = list(units)
-            st.session_state._last_note    = note
-            st.session_state.submitted_id  = rec_id
+            st.session_state._last_pt           = product_type
+            st.session_state._last_header       = header
+            st.session_state._last_results      = dict(st.session_state.results)
+            st.session_state._last_units        = list(units)
+            st.session_state._last_note         = note
+            st.session_state._last_chart_image  = st.session_state.get("_esc_chart_bytes") if product_type == "esc" else None
+            st.session_state.submitted_id       = rec_id
             st.rerun()
         except Exception as e:
             st.error(f"寫入失敗：{e}")

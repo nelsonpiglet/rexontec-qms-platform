@@ -14,7 +14,7 @@ try:
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.platypus import (
         SimpleDocTemplate, Table, TableStyle,
-        Paragraph, Spacer, HRFlowable,
+        Paragraph, Spacer, HRFlowable, Image as RLImage,
     )
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
@@ -158,6 +158,8 @@ def generate_pdf(
     units: list,
     ng_summary: str = "",
     note: str = "",
+    chart_image: bytes = None,
+    chart_caption: str = "運轉功能測試腳本 — 1000µs ～ 1900µs 動態響應與負載穩定性",
 ) -> bytes:
     """
     生成 OQC 出廠檢驗報告 PDF，回傳 bytes。
@@ -541,6 +543,64 @@ def generate_pdf(
         ]))
         story.append(note_tbl)
         story.append(Spacer(1, 3 * mm))
+
+    # ══════════════════════════════════════════════════
+    # 5.5 飛行運轉腳本測試圖示（ESC 專用，有圖才插入）
+    # ══════════════════════════════════════════════════
+    if chart_image:
+        try:
+            chart_hdr = Table(
+                [[Paragraph(
+                    "📈  飛行運轉腳本測試圖示",
+                    SB("ch", fontSize=10, textColor=C_WHITE, leading=14),
+                )]],
+                colWidths=[avail_w],
+            )
+            chart_hdr.setStyle(TableStyle([
+                ("BACKGROUND",    (0, 0), (-1, -1), C_NAVY),
+                ("TOPPADDING",    (0, 0), (-1, -1), 6),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                ("LEFTPADDING",   (0, 0), (-1, -1), 10),
+            ]))
+            story.append(chart_hdr)
+
+            # 讀取圖片、等比縮放以符合版面（最大寬 avail_w，最大高 88mm）
+            _img_stream = io.BytesIO(chart_image)
+            _ri = RLImage(_img_stream)
+            _max_w = avail_w
+            _max_h = 88 * mm
+            _scale = min(_max_w / _ri.drawWidth, _max_h / _ri.drawHeight, 1.0)
+            _ri.drawWidth  = _ri.drawWidth  * _scale
+            _ri.drawHeight = _ri.drawHeight * _scale
+
+            # 置中：包在 Table 裡靠中
+            img_tbl = Table([[_ri]], colWidths=[avail_w])
+            img_tbl.setStyle(TableStyle([
+                ("ALIGN",          (0, 0), (-1, -1), "CENTER"),
+                ("VALIGN",         (0, 0), (-1, -1), "MIDDLE"),
+                ("TOPPADDING",     (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING",  (0, 0), (-1, -1), 3),
+                ("BACKGROUND",     (0, 0), (-1, -1), colors.HexColor("#f9fafc")),
+            ]))
+            story.append(img_tbl)
+
+            if chart_caption:
+                cap_tbl = Table(
+                    [[Paragraph(chart_caption,
+                                S("capt", fontSize=8.5,
+                                  textColor=colors.HexColor("#6b7c93"),
+                                  leading=12, alignment=1))]],
+                    colWidths=[avail_w],
+                )
+                cap_tbl.setStyle(TableStyle([
+                    ("TOPPADDING",    (0, 0), (-1, -1), 2),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ]))
+                story.append(cap_tbl)
+
+            story.append(Spacer(1, 4 * mm))
+        except Exception:
+            pass   # 圖片有問題時靜默略過，不影響其他內容
 
     # ══════════════════════════════════════════════════
     # 6. 總判定
