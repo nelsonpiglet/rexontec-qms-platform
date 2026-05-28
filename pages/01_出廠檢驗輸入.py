@@ -222,6 +222,13 @@ if st.session_state.get("_last_tpl_state") != _tpl_state_key:
     st.session_state["_last_tpl_state"] = _tpl_state_key
     st.session_state.results = {}
     st.session_state.units   = []
+    # 切換機種時，從 OQC 模板自動預填客戶名稱
+    if _use_oqc_tpl:
+        from utils.oqc_template_db import get_template as _get_tpl
+        _tpl_meta = _get_tpl(_hdr_model) or {}
+        _tpl_cust = _tpl_meta.get("customer", "")
+        if _tpl_cust and _tpl_cust in get_customers():
+            st.session_state["hdr_cust"] = _tpl_cust
 
 if _use_oqc_tpl:
     sections = get_oqc_sections(_hdr_model)
@@ -262,7 +269,11 @@ with st.expander("📋 基本資料 / 表頭", expanded=True):
     with c2:
         hdr_part_no  = st.text_input("料號", placeholder="例：7720-057-00400", key="hdr_pn")
     with c3:
-        hdr_customer = st.selectbox("客戶名稱 *", get_customers(), key="hdr_cust")
+        _cust_opts = get_customers()
+        # 若 session_state 值不在選項內（如舊資料、編碼差異），自動修正
+        if st.session_state.get("hdr_cust") not in _cust_opts:
+            st.session_state["hdr_cust"] = _cust_opts[0]
+        hdr_customer = st.selectbox("客戶名稱 *", _cust_opts, key="hdr_cust")
 
     c4, c5, c6 = st.columns(3)
     with c4:

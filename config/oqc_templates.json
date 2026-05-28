@@ -194,7 +194,8 @@
     ],
     "doc_no": "MD1003RX-OQC",
     "source": "MD1003RX成檢表_20260527.xlsx",
-    "qty": 300
+    "qty": 300,
+    "customer": "力山科技"
   },
   "MD0350RX": {
     "model": "MD0350RX",
@@ -535,6 +536,7 @@
     ],
     "doc_no": "MD0350RX-OQC",
     "source": "MD0350RX成檢表.xlsx",
-    "qty": 0
+    "qty": 0,
+    "customer": "力山科技"
   }
 }
