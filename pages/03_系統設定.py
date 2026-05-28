@@ -404,7 +404,7 @@ with tab2:
         import copy as _cp
 
         esc_templates = _esc_load()
-        _esc_model_list = list(_esc_templates.keys())
+        _esc_model_list = list(esc_templates.keys())
 
         # ── 從現有機種複製 ───────────────────────────
         if _esc_model_list:
