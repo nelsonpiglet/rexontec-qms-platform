@@ -1,6 +1,7 @@
 """
 REXONTEC OQC — ESC 電調 per-model 檢驗模板資料庫
-儲存於 config/esc_templates.json
+資料永久儲存於 Google Sheets「Config」工作表（key = "esc_templates"）。
+本機 config/esc_templates.json 已不再使用。
 
 Template 格式（與 inspection_data.py 的 sections 結構相容）：
 {
@@ -25,30 +26,35 @@ Template 格式（與 inspection_data.py 的 sections 結構相容）：
   }
 }
 """
-import os
-import json
+import streamlit as st
 from datetime import datetime
 
-_TEMPLATE_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "..", "config", "esc_templates.json",
-)
+_GSHEET_KEY = "esc_templates"
 
 
-def load_templates() -> dict:
-    """讀取所有模板，不存在或格式錯誤回傳空 dict。"""
+# ── 帶快取的讀取（30 秒 TTL，避免每次渲染都呼叫 API）────────────
+@st.cache_data(ttl=30, show_spinner=False)
+def _cached_load() -> dict:
+    """從 Google Sheets Config 讀取 ESC 模板（最多快取 30 秒）。"""
     try:
-        with open(_TEMPLATE_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+        from utils.gsheet import get_config_json
+        result = get_config_json(_GSHEET_KEY)
+        return result if isinstance(result, dict) else {}
+    except Exception:
         return {}
 
 
+# ── 公開 API ────────────────────────────────────────────────────
+def load_templates() -> dict:
+    """讀取所有模板，連線失敗回傳空 dict。"""
+    return _cached_load()
+
+
 def save_templates(templates: dict) -> None:
-    """儲存所有模板至 JSON 檔案。"""
-    os.makedirs(os.path.dirname(_TEMPLATE_PATH), exist_ok=True)
-    with open(_TEMPLATE_PATH, "w", encoding="utf-8") as f:
-        json.dump(templates, f, ensure_ascii=False, indent=2)
+    """儲存所有模板至 Google Sheets Config，並立即清除快取。"""
+    from utils.gsheet import set_config_json
+    set_config_json(_GSHEET_KEY, templates)
+    _cached_load.clear()          # 下一次 load 直接取最新值
 
 
 def list_models() -> list:
@@ -64,9 +70,7 @@ def get_template(model: str) -> dict | None:
 def get_sections(model: str) -> list:
     """依機種取得 sections 清單，不存在回傳空 list。"""
     tpl = load_templates().get(model)
-    if tpl:
-        return tpl.get("sections", [])
-    return []
+    return tpl.get("sections", []) if tpl else []
 
 
 def upsert_template(model: str, sections: list, meta: dict = None) -> None:
@@ -75,10 +79,10 @@ def upsert_template(model: str, sections: list, meta: dict = None) -> None:
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
     old = templates.get(model, {})
     templates[model] = {
-        "model": model,
+        "model":      model,
         "created_at": old.get("created_at", now[:10]),
         "updated_at": now,
-        "sections": sections,
+        "sections":   sections,
         **(meta or {}),
     }
     save_templates(templates)
