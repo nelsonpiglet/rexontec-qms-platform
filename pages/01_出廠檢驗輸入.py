@@ -227,7 +227,13 @@ if st.session_state.get("_last_tpl_state") != _tpl_state_key:
         from utils.oqc_template_db import get_template as _get_tpl
         _tpl_meta = _get_tpl(_hdr_model) or {}
         _tpl_cust = _tpl_meta.get("customer", "")
-        if _tpl_cust and _tpl_cust in get_customers():
+        if _tpl_cust:
+            # 確保 DB 有此客戶名稱（自動植入）
+            try:
+                from utils.signature_db import add_name as _sdb_add
+                _sdb_add(_tpl_cust, "customer")
+            except Exception:
+                pass
             st.session_state["hdr_cust"] = _tpl_cust
 
 if _use_oqc_tpl:
@@ -259,6 +265,56 @@ if _use_oqc_tpl:
 
 
 # ════════════════════════════════════════════════════
+# ── 智慧選取元件（下拉快選 + 手填 + 自動記憶）────────
+# ════════════════════════════════════════════════════
+_ADD_NEW = "＋ 新增人員"
+
+def _smart_combo(label_html: str, role: str,
+                 sel_key: str, free_key: str, flag_key: str,
+                 fallback: list = None) -> str:
+    """
+    通用 combo 元件：
+      ① 顯示 HTML label
+      ② selectbox：DB 現有名稱 + [＋ 新增人員]
+      ③ 選到「＋ 新增人員」→ 顯示 text_input
+      ④ 提交後由呼叫端負責 add_name() 寫入 DB
+    回傳最終名稱字串。
+    """
+    from utils.signature_db import get_names, seed_if_empty
+
+    # 首次使用：植入 config 預設名單
+    if fallback:
+        try:
+            seed_if_empty(role, fallback)
+        except Exception:
+            pass
+
+    names = get_names(role)
+    if not names and fallback:
+        names = [n for n in (fallback or []) if (n or "").strip() and n != "其他"]
+
+    opts = names + [_ADD_NEW]
+
+    st.markdown(label_html, unsafe_allow_html=True)
+
+    if st.session_state.get(sel_key) not in opts:
+        st.session_state[sel_key] = opts[0]
+
+    sel = st.selectbox("", opts, key=sel_key, label_visibility="collapsed")
+
+    if sel == _ADD_NEW:
+        st.session_state[flag_key] = True
+        typed = st.text_input(
+            "", key=free_key, label_visibility="collapsed",
+            placeholder="輸入新名稱，提交後自動記憶"
+        )
+        return (typed or "").strip()
+    else:
+        st.session_state[flag_key] = False
+        return sel
+
+
+# ════════════════════════════════════════════════════
 # ② 基本資料表頭
 # ════════════════════════════════════════════════════
 with st.expander("📋 基本資料 / 表頭", expanded=True):
@@ -269,18 +325,12 @@ with st.expander("📋 基本資料 / 表頭", expanded=True):
     with c2:
         hdr_part_no  = st.text_input("料號", placeholder="例：7720-057-00400", key="hdr_pn")
     with c3:
-        _cust_opts = get_customers()
-        if st.session_state.get("hdr_cust") not in _cust_opts:
-            st.session_state["hdr_cust"] = _cust_opts[0]
-        def _on_cust_sel():
-            st.session_state["hdr_cust_free"] = st.session_state.get("hdr_cust", "")
-        st.selectbox("客戶名稱（快選）*", _cust_opts, key="hdr_cust",
-                      on_change=_on_cust_sel)
-        if "hdr_cust_free" not in st.session_state:
-            st.session_state["hdr_cust_free"] = st.session_state.get("hdr_cust", _cust_opts[0])
-        hdr_customer = st.text_input(
-            "↑ 可直接修改客戶名稱", key="hdr_cust_free",
-            placeholder="輸入客戶名稱")
+        hdr_customer = _smart_combo(
+            "<div style='font-size:12px;font-weight:600;margin-bottom:2px'>"
+            "客戶名稱 *</div>",
+            "customer", "hdr_cust", "hdr_cust_free", "_cust_is_new",
+            fallback=get_customers(),
+        )
 
     c4, c5, c6 = st.columns(3)
     with c4:
@@ -296,7 +346,12 @@ with st.expander("📋 基本資料 / 表頭", expanded=True):
     with c8:
         hdr_sample   = st.number_input("抽驗數量 *", min_value=1, value=5,  step=1, key="hdr_sample")
     with c9:
-        hdr_insp     = st.selectbox("檢驗員 *", get_inspectors(), key="hdr_insp")
+        hdr_insp = _smart_combo(
+            "<div style='font-size:12px;font-weight:600;margin-bottom:2px'>"
+            "檢驗員 *</div>",
+            "inspector", "hdr_insp", "hdr_insp_free", "_hdr_insp_is_new",
+            fallback=get_inspectors(),
+        )
 
     c10, c11, _ = st.columns(3)
     with c10:
@@ -931,45 +986,29 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-_all_inspectors  = get_inspectors()
-_all_supervisors = get_supervisors()
 sig_c1, sig_c2, sig_c3 = st.columns(3)
 with sig_c1:
-    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>檢驗員</div>",
-                unsafe_allow_html=True)
-    if st.session_state.get("sig_insp") not in _all_inspectors:
-        _def_insp = hdr_insp if hdr_insp in _all_inspectors else _all_inspectors[0]
-        st.session_state["sig_insp"] = _def_insp
-    def _on_insp_sel():
-        st.session_state["sig_insp_free"] = st.session_state.get("sig_insp", "")
-    st.selectbox("下拉選取", _all_inspectors, key="sig_insp",
-                  label_visibility="collapsed", on_change=_on_insp_sel)
-    if "sig_insp_free" not in st.session_state:
-        st.session_state["sig_insp_free"] = st.session_state.get("sig_insp", _all_inspectors[0])
-    sig_inspector = st.text_input("↑ 可手填修改", key="sig_insp_free",
-                                   placeholder="輸入姓名")
+    sig_inspector = _smart_combo(
+        "<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>檢驗員</div>",
+        "inspector", "sig_insp", "sig_insp_free", "_insp_is_new",
+        fallback=get_inspectors(),
+    )
     sig_insp_date = st.date_input("日期", value=date.today(),
                                    key="sig_insp_date", label_visibility="visible")
 with sig_c2:
-    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>品保主管</div>",
-                unsafe_allow_html=True)
-    if st.session_state.get("sig_super") not in _all_supervisors:
-        st.session_state["sig_super"] = _all_supervisors[0]
-    def _on_super_sel():
-        st.session_state["sig_super_free"] = st.session_state.get("sig_super", "")
-    st.selectbox("下拉選取", _all_supervisors, key="sig_super",
-                  label_visibility="collapsed", on_change=_on_super_sel)
-    if "sig_super_free" not in st.session_state:
-        st.session_state["sig_super_free"] = st.session_state.get("sig_super", _all_supervisors[0])
-    sig_supervisor = st.text_input("↑ 可手填修改", key="sig_super_free",
-                                    placeholder="輸入姓名")
+    sig_supervisor = _smart_combo(
+        "<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>品保主管</div>",
+        "qa_manager", "sig_super", "sig_super_free", "_super_is_new",
+        fallback=get_supervisors(),
+    )
     sig_super_date = st.date_input("日期", value=date.today(),
                                     key="sig_super_date", label_visibility="visible")
 with sig_c3:
-    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>核准</div>",
-                unsafe_allow_html=True)
-    sig_approver  = st.text_input("核准人員", placeholder="核准人員姓名",
-                                   key="sig_approver", label_visibility="collapsed")
+    sig_approver = _smart_combo(
+        "<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>核准</div>",
+        "approver", "sig_appr_sel", "sig_appr_free", "_appr_is_new",
+        fallback=[],
+    )
     sig_appr_date = st.date_input("日期", value=date.today(),
                                    key="sig_appr_date", label_visibility="visible")
 
@@ -1007,7 +1046,7 @@ with st.expander("📄 匯出 PDF 報告（填寫中途亦可下載）", expande
             "sig_insp_date": str(st.session_state.get("sig_insp_date", "")),
             "sig_supervisor":sig_supervisor,
             "sig_super_date":str(st.session_state.get("sig_super_date", "")),
-            "sig_approver":  st.session_state.get("sig_approver", ""),
+            "sig_approver":  sig_approver,
             "sig_appr_date": str(st.session_state.get("sig_appr_date", "")),
         }
         if st.button("🖨️ 生成 PDF", key="gen_pdf_btn", type="primary"):
@@ -1084,6 +1123,23 @@ if submit_clicked:
         "sig_approver":  sig_approver,
         "sig_appr_date": str(sig_appr_date),
     }
+
+    # ── 自動記憶新增人員 / 客戶 ──────────────────────────
+    try:
+        from utils.signature_db import add_name as _sig_save
+        if st.session_state.get("_cust_is_new")         and hdr_customer:
+            _sig_save(hdr_customer,   "customer")
+        if st.session_state.get("_hdr_insp_is_new")     and hdr_insp:
+            _sig_save(hdr_insp,       "inspector")
+        if st.session_state.get("_insp_is_new")         and sig_inspector:
+            _sig_save(sig_inspector,  "inspector")
+        if st.session_state.get("_super_is_new")        and sig_supervisor:
+            _sig_save(sig_supervisor, "qa_manager")
+        if st.session_state.get("_appr_is_new")         and sig_approver:
+            _sig_save(sig_approver,   "approver")
+    except Exception:
+        pass
+    # ────────────────────────────────────────────────────
 
     with st.spinner("寫入 Google Sheet 中…"):
         try:
