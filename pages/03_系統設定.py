@@ -798,10 +798,418 @@ with tab2:
             inspection_item_editor("esc", "esc_sections")
 
 # ───────────────────────────────────────────────────
-# TAB 3：馬達 Motor 檢驗項目
+# TAB 3：馬達 Motor 檢驗項目（per-model 模板管理）
 # ───────────────────────────────────────────────────
 with tab3:
-    inspection_item_editor("motor", "motor_sections")
+    st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#f7f9fc;border:1px solid var(--border);
+            border-left:4px solid #27ae60;border-radius:6px;padding:10px 14px">
+  管理馬達各機種的檢驗項目模板。建立機種模板後，「出廠檢驗輸入」→ 馬達 Motor 選取對應機種時，
+  將自動套用該機種模板。<br>
+  <span style="color:#888">尚未建立模板的機種，仍使用「⚙️ 基本設定」中的共用 Motor 預設項目。</span>
+</div>
+""", unsafe_allow_html=True)
+
+    # ── 僅把 import 包在 try 裡；UI / 按鈕處理不放 try，確保 st.rerun() 能正常傳播 ──
+    _mtr_ok = True
+    try:
+        from utils.motor_template_db import (
+            load_templates as _mtr_load, save_templates as _mtr_save_tpl,
+            delete_template as _mtr_del_tpl, upsert_template as _mtr_upsert,
+        )
+        from utils.inspection_data import get_config as _get_cfg_mtr
+        import copy as _cp_mtr
+    except Exception as _mtr_ie:
+        st.error(f"❌ 缺少 utils/motor_template_db.py 模組：{_mtr_ie}")
+        _mtr_ok = False
+
+    if _mtr_ok:
+        mtr_templates = _mtr_load()
+        _mtr_model_list = list(mtr_templates.keys())
+
+        # ── 操作成功訊息 ─────────────────────────────
+        if "_mtr_msg" in st.session_state:
+            st.success(st.session_state["_mtr_msg"])
+            del st.session_state["_mtr_msg"]
+
+        # ── 從現有機種複製 ───────────────────────────
+        if _mtr_model_list:
+            st.markdown(
+                '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+                '📋 快速複製現有機種模板作為新機種的起點：</div>',
+                unsafe_allow_html=True,
+            )
+            _mc1, _mc2 = st.columns([5, 1])
+            with _mc1:
+                _mtr_copy_sel = st.selectbox(
+                    "選擇來源機種",
+                    options=_mtr_model_list,
+                    key="mtr_copy_sel",
+                    label_visibility="collapsed",
+                )
+            with _mc2:
+                if st.button("🔁 複製此機種", use_container_width=True, key="mtr_do_copy"):
+                    _src_tpl  = _cp_mtr.deepcopy(mtr_templates[_mtr_copy_sel])
+                    _base     = _mtr_copy_sel
+                    _existing = set(_mtr_model_list)
+                    _suffix   = "-COPY"; _n = 2
+                    while (_base + _suffix) in _existing:
+                        _suffix = f"-COPY{_n}"; _n += 1
+                    _new_key = _base + _suffix
+                    _src_tpl["model"]      = _new_key
+                    _src_tpl["created_at"] = datetime.now().strftime("%Y-%m-%d")
+                    _src_tpl["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                    _new_tpls[_new_key] = _src_tpl
+                    _mtr_save_tpl(_new_tpls)
+                    st.rerun()
+
+            st.markdown(
+                "<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>",
+                unsafe_allow_html=True,
+            )
+
+        # ── 新增全新機種模板 ─────────────────────────
+        with st.expander("➕ 新增全新機種模板", expanded=False):
+            st.markdown(
+                '<div style="font-size:11px;color:#27ae60;background:#e8f8f0;'
+                'border-radius:5px;padding:6px 10px;margin-bottom:8px">'
+                '⚠️ 機種名稱必須與「⚙️ 基本設定」中的馬達機種清單完全一致，'
+                '出廠檢驗輸入才能自動套用此模板。</div>',
+                unsafe_allow_html=True,
+            )
+            _cfg_mtr_models = [m for m in cfg.get("motor_models", []) if m and m != "其他"]
+            _mtr_avail      = [m for m in _cfg_mtr_models if m not in mtr_templates]
+            _mn1, _mn2 = st.columns(2)
+            with _mn1:
+                if _mtr_avail:
+                    _new_mtr_name = st.selectbox(
+                        "選擇機種 *（來自基本設定清單）",
+                        options=_mtr_avail,
+                        key="mtr_new_model_sel",
+                    )
+                else:
+                    st.info("所有已登記的馬達機種皆已建立模板。"
+                            "如需新機種，請先至「基本設定」→「馬達機種」新增。")
+                    _new_mtr_name = ""
+            with _mn2:
+                _new_mtr_from_default = st.checkbox(
+                    "從預設 Motor 共用項目複製（自動帶入預設 Section）",
+                    key="mtr_new_from_default",
+                    value=True,
+                )
+            if _mtr_avail and st.button("✅ 建立機種模板", key="mtr_new_model_add", type="primary"):
+                _nm = _new_mtr_name
+                if not _nm:
+                    st.warning("請選擇機種")
+                elif _nm in mtr_templates:
+                    st.warning(f"機種「{_nm}」已存在，請直接在下方編輯")
+                else:
+                    _init_secs = _cp_mtr.deepcopy(_get_cfg_mtr().get("motor_sections", [])) \
+                                 if _new_mtr_from_default else []
+                    _mtr_upsert(_nm, _init_secs)
+                    st.session_state["_mtr_msg"] = f"✅ 已建立「{_nm}」機種模板"
+                    st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── 各機種模板管理 ───────────────────────────
+        if not _mtr_model_list:
+            st.markdown("""
+<div style="background:#fafbfc;border:2px dashed #ddd;border-radius:10px;
+            padding:40px;text-align:center;color:#bbb">
+  <div style="font-size:32px;margin-bottom:8px">🔧</div>
+  <div style="font-size:13px;font-weight:600;color:#aaa">尚無 Motor 機種模板</div>
+  <div style="font-size:11px;margin-top:6px">請使用上方「新增全新機種模板」建立第一個機種</div>
+</div>
+""", unsafe_allow_html=True)
+
+        for _mtr_model_key, _mtr_tpl in mtr_templates.items():
+            _mtr_secs  = _mtr_tpl.get("sections", [])
+            _mn_items  = sum(len(s.get("items", [])) for s in _mtr_secs)
+            _mupdated  = _mtr_tpl.get("updated_at", _mtr_tpl.get("created_at", "─"))
+
+            with st.expander(
+                f"🔧  **{_mtr_model_key}**  ·  {len(_mtr_secs)} 區段  ·  {_mn_items} 項目  ·  更新：{_mupdated}",
+                expanded=False,
+            ):
+                _mop1, _mop2 = st.columns([8, 1])
+                with _mop2:
+                    if st.button("🗑️ 刪除機種", key=f"mtr_del_{_mtr_model_key}",
+                                 help="刪除此機種模板（無法復原）"):
+                        if _mtr_del_tpl(_mtr_model_key):
+                            st.session_state["_mtr_msg"] = f"✅ 已刪除「{_mtr_model_key}」機種模板"
+                            st.rerun()
+
+                # ── 新增 Section ──────────────────────
+                with st.expander("➕ 新增檢驗類別（Section）", expanded=False):
+                    _msc1, _msc2, _msc3 = st.columns([2, 4, 4])
+                    with _msc1:
+                        _mns_id  = st.text_input("代號", key=f"mtr_ns_id_{_mtr_model_key}",
+                                                 placeholder="C", max_chars=4)
+                    with _msc2:
+                        _mns_lb  = st.text_input("類別名稱", key=f"mtr_ns_lb_{_mtr_model_key}",
+                                                 placeholder="例：電氣安規測試類")
+                    with _msc3:
+                        _mns_sub = st.text_input("副標題", key=f"mtr_ns_sub_{_mtr_model_key}",
+                                                 placeholder="例：高壓安規設備")
+                    if st.button("新增類別", key=f"mtr_ns_add_{_mtr_model_key}", type="primary"):
+                        _mnid = _mns_id.strip().upper()
+                        _mexisting_ids = [s["id"] for s in _mtr_secs]
+                        if not _mnid or not _mns_lb.strip():
+                            st.warning("代號與名稱不可空白")
+                        elif _mnid in _mexisting_ids:
+                            st.warning(f"代號「{_mnid}」已存在")
+                        else:
+                            _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                            _new_tpls[_mtr_model_key]["sections"].append({
+                                "id": _mnid, "label": _mns_lb.strip(),
+                                "subtitle": _mns_sub.strip(), "items": [],
+                            })
+                            _new_tpls[_mtr_model_key]["updated_at"] = \
+                                datetime.now().strftime("%Y-%m-%d %H:%M")
+                            _mtr_save_tpl(_new_tpls)
+                            st.rerun()
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # ── 各 Section ────────────────────────
+                for _msi, _msec in enumerate(_mtr_secs):
+                    _msec_id    = _msec["id"]
+                    _msec_label = _msec["label"]
+                    _msec_items = _msec.get("items", [])
+
+                    _msh1, _msh2, _msh3 = st.columns([7, 1, 1])
+                    with _msh1:
+                        st.markdown(
+                            f'<div style="font-size:14px;font-weight:700;color:var(--navy);'
+                            f'border-left:4px solid #27ae60;padding-left:10px;margin-bottom:6px">'
+                            f'{_msec_id}｜{_msec_label}'
+                            f'<span style="font-size:11px;color:var(--muted);margin-left:8px">'
+                            f'{_msec.get("subtitle","")}</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    with _msh2:
+                        if not _msec_items:
+                            if st.button("刪除", key=f"mtr_del_sec_{_mtr_model_key}_{_msi}",
+                                         help="刪除此空白類別"):
+                                _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                                _new_tpls[_mtr_model_key]["sections"].pop(_msi)
+                                _new_tpls[_mtr_model_key]["updated_at"] = \
+                                    datetime.now().strftime("%Y-%m-%d %H:%M")
+                                _mtr_save_tpl(_new_tpls)
+                                st.session_state["_mtr_msg"] = f"✅ 已刪除「{_msec_id}｜{_msec_label}」類別"
+                                st.rerun()
+                        else:
+                            st.caption(f"{len(_msec_items)} 項")
+
+                    with st.expander(
+                        f"展開 {_msec_id} 的 {len(_msec_items)} 個檢驗項目", expanded=False
+                    ):
+                        # 現有項目
+                        for _mii, _mitem in enumerate(_msec_items):
+                            _mitype = _mitem.get("type", "pf")
+                            _mgc    = {"CR": "#c0392b", "MA": "#d68910", "MI": "#1e8449"}.get(
+                                _mitem.get("grade", "MA"), "#888")
+                            st.markdown(
+                                f'<div style="background:#fafbfc;border:1px solid var(--border);'
+                                f'border-left:3px solid {_mgc};border-radius:5px;'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:11.5px">'
+                                f'<span style="background:{_mgc};color:#fff;padding:1px 6px;'
+                                f'border-radius:3px;font-size:9px;font-weight:800;margin-right:6px">'
+                                f'{_mitem.get("grade","MA")}</span>'
+                                f'<b>{_mitem["name"]}</b>'
+                                f'<span style="color:var(--muted);font-size:10.5px;margin-left:8px">'
+                                f'規格：{_mitem["spec"][:40]}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _mec1, _mec2, _mec3, _mec4 = st.columns([3, 4, 1, 1])
+                            with _mec1:
+                                _mnew_name = st.text_input(
+                                    "項目名稱",
+                                    value=_mitem["name"],
+                                    key=f"mtr_ename_{_mtr_model_key}_{_msi}_{_mii}",
+                                    label_visibility="collapsed",
+                                )
+                            with _mec2:
+                                _mnew_spec = st.text_input(
+                                    "規格標準",
+                                    value=_mitem["spec"],
+                                    key=f"mtr_espec_{_mtr_model_key}_{_msi}_{_mii}",
+                                    label_visibility="collapsed",
+                                )
+                            with _mec3:
+                                if st.button("✏️ 儲存",
+                                             key=f"mtr_esave_{_mtr_model_key}_{_msi}_{_mii}",
+                                             use_container_width=True):
+                                    _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                                    _tgt = _new_tpls[_mtr_model_key]["sections"][_msi]["items"][_mii]
+                                    _tgt["name"] = _mnew_name.strip() or _mitem["name"]
+                                    _tgt["spec"] = _mnew_spec.strip() or _mitem["spec"]
+                                    _new_tpls[_mtr_model_key]["updated_at"] = \
+                                        datetime.now().strftime("%Y-%m-%d %H:%M")
+                                    _mtr_save_tpl(_new_tpls)
+                                    st.rerun()
+                            with _mec4:
+                                if st.button("🗑️ 刪除",
+                                             key=f"mtr_edel_{_mtr_model_key}_{_msi}_{_mii}",
+                                             use_container_width=True):
+                                    _del_name = _mitem["name"]
+                                    _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                                    _new_tpls[_mtr_model_key]["sections"][_msi]["items"].pop(_mii)
+                                    _new_tpls[_mtr_model_key]["updated_at"] = \
+                                        datetime.now().strftime("%Y-%m-%d %H:%M")
+                                    _mtr_save_tpl(_new_tpls)
+                                    st.session_state["_mtr_msg"] = (
+                                        f"✅ 已從「{_mtr_model_key}」→「{_msec_label}」"
+                                        f"刪除項目「{_del_name}」"
+                                    )
+                                    st.rerun()
+
+                            # 數值型項目額外欄位
+                            if _mitype == "num":
+                                _mnc1, _mnc2, _mnc3, _mnc4 = st.columns([2, 2, 2, 2])
+                                with _mnc1:
+                                    st.caption(f"單位：{_mitem.get('unit','')}")
+                                with _mnc2:
+                                    _mcur_min = "" if _mitem.get("min") is None else str(_mitem["min"])
+                                    _mnew_min = st.text_input(
+                                        "最小值",
+                                        value=_mcur_min,
+                                        key=f"mtr_emin_{_mtr_model_key}_{_msi}_{_mii}",
+                                        placeholder="無限制",
+                                    )
+                                with _mnc3:
+                                    _mcur_max = "" if _mitem.get("max") is None else str(_mitem["max"])
+                                    _mnew_max = st.text_input(
+                                        "最大值",
+                                        value=_mcur_max,
+                                        key=f"mtr_emax_{_mtr_model_key}_{_msi}_{_mii}",
+                                        placeholder="無限制",
+                                    )
+                                with _mnc4:
+                                    st.caption("")
+                                    if st.button("更新範圍",
+                                                 key=f"mtr_erange_{_mtr_model_key}_{_msi}_{_mii}"):
+                                        _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                                        _tgt = _new_tpls[_mtr_model_key]["sections"][_msi]["items"][_mii]
+                                        try:
+                                            _tgt["min"] = float(_mnew_min) if _mnew_min.strip() else None
+                                            _tgt["max"] = float(_mnew_max) if _mnew_max.strip() else None
+                                            _new_tpls[_mtr_model_key]["updated_at"] = \
+                                                datetime.now().strftime("%Y-%m-%d %H:%M")
+                                            _mtr_save_tpl(_new_tpls)
+                                            st.rerun()
+                                        except ValueError:
+                                            st.error("最小值/最大值請填入數字")
+
+                            st.markdown("---")
+
+                        # ── 新增項目表單 ─────────────────
+                        st.markdown(
+                            f'<div style="font-size:12px;font-weight:700;color:#27ae60;'
+                            f'margin-bottom:8px">➕ 新增項目至 {_msec_id}｜{_msec_label}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        _mf1, _mf2, _mf3, _mf4 = st.columns([3, 4, 1, 1])
+                        with _mf1:
+                            _mni_name = st.text_input(
+                                "項目名稱*",
+                                key=f"mtr_ni_name_{_mtr_model_key}_{_msi}",
+                                placeholder="例：絕緣電阻測試",
+                            )
+                        with _mf2:
+                            _mni_spec = st.text_input(
+                                "規格標準*",
+                                key=f"mtr_ni_spec_{_mtr_model_key}_{_msi}",
+                                placeholder="例：≧100 MΩ",
+                            )
+                        with _mf3:
+                            _mni_grade = st.selectbox(
+                                "等級", ["MA", "CR", "MI"],
+                                key=f"mtr_ni_grade_{_mtr_model_key}_{_msi}",
+                            )
+                        with _mf4:
+                            _mni_type = st.selectbox(
+                                "類型", ["pf（通過/失敗）", "num（數值量測）"],
+                                key=f"mtr_ni_type_{_mtr_model_key}_{_msi}",
+                            )
+                        _mni_tool = st.text_input(
+                            "量測工具",
+                            key=f"mtr_ni_tool_{_mtr_model_key}_{_msi}",
+                            placeholder="例：三用電表",
+                        )
+                        _mtype_key = "num" if _mni_type.startswith("num") else "pf"
+                        if _mtype_key == "num":
+                            _mu1, _mu2, _mu3 = st.columns(3)
+                            with _mu1:
+                                _mni_unit = st.text_input(
+                                    "單位",
+                                    key=f"mtr_ni_unit_{_mtr_model_key}_{_msi}",
+                                    placeholder="例：MΩ",
+                                )
+                            with _mu2:
+                                _mni_min_s = st.text_input(
+                                    "最小值（空白=無限制）",
+                                    key=f"mtr_ni_min_{_mtr_model_key}_{_msi}",
+                                )
+                            with _mu3:
+                                _mni_max_s = st.text_input(
+                                    "最大值（空白=無限制）",
+                                    key=f"mtr_ni_max_{_mtr_model_key}_{_msi}",
+                                )
+                        else:
+                            _mni_unit = ""; _mni_min_s = ""; _mni_max_s = ""
+
+                        if st.button(
+                            "新增項目",
+                            key=f"mtr_ni_add_{_mtr_model_key}_{_msi}",
+                            type="primary",
+                        ):
+                            if not _mni_name.strip() or not _mni_spec.strip():
+                                st.warning("項目名稱與規格標準不可空白")
+                            else:
+                                _mnew_iid  = f"{_msec_id}{len(_msec_items)+1}"
+                                _mnew_no   = f"{len(_msec_items)+1}.0"
+                                _mnew_item = {
+                                    "id": _mnew_iid, "no": _mnew_no,
+                                    "name": _mni_name.strip(),
+                                    "spec": _mni_spec.strip(),
+                                    "grade": _mni_grade,
+                                    "type": _mtype_key,
+                                    "tool": _mni_tool.strip(),
+                                }
+                                if _mtype_key == "num":
+                                    _mnew_item["unit"] = _mni_unit.strip()
+                                    try:
+                                        _mnew_item["min"] = float(_mni_min_s) if _mni_min_s.strip() else None
+                                        _mnew_item["max"] = float(_mni_max_s) if _mni_max_s.strip() else None
+                                    except ValueError:
+                                        st.error("最小值/最大值請填入數字")
+                                        st.stop()
+                                _new_tpls = _cp_mtr.deepcopy(mtr_templates)
+                                _new_tpls[_mtr_model_key]["sections"][_msi]["items"].append(_mnew_item)
+                                _new_tpls[_mtr_model_key]["updated_at"] = \
+                                    datetime.now().strftime("%Y-%m-%d %H:%M")
+                                _mtr_save_tpl(_new_tpls)
+                                st.rerun()
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── 共用預設項目（always-visible fallback） ──
+        st.markdown(
+            "<hr style='border:none;border-top:1px solid var(--border);margin:20px 0'>",
+            unsafe_allow_html=True,
+        )
+        with st.expander("⚙️ 共用預設 Motor 檢驗項目（未建立機種模板時使用）", expanded=False):
+            st.markdown(
+                '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
+                '以下為所有未建立機種模板時使用的共用預設項目，可在「基本設定」中修改。</div>',
+                unsafe_allow_html=True,
+            )
+            inspection_item_editor("motor", "motor_sections")
 
 
 # ───────────────────────────────────────────────────
