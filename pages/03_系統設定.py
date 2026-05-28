@@ -394,15 +394,20 @@ with tab2:
 </div>
 """, unsafe_allow_html=True)
 
+    # ── 僅把 import 包在 try 裡；UI / 按鈕處理不放 try，確保 st.rerun() 能正常傳播 ──
+    _esc_ok = True
     try:
         from utils.esc_template_db import (
             load_templates as _esc_load, save_templates as _esc_save_tpl,
             delete_template as _esc_del_tpl, upsert_template as _esc_upsert,
-            list_models as _esc_list_models,
         )
         from utils.inspection_data import get_config as _get_cfg_esc
         import copy as _cp
+    except Exception as _esc_ie:
+        st.error(f"❌ 缺少 utils/esc_template_db.py 模組：{_esc_ie}")
+        _esc_ok = False
 
+    if _esc_ok:
         esc_templates = _esc_load()
         _esc_model_list = list(esc_templates.keys())
 
@@ -767,10 +772,6 @@ with tab2:
                 unsafe_allow_html=True,
             )
             inspection_item_editor("esc", "esc_sections")
-
-    except Exception as _e:
-        st.error(f"❌ ESC 模板管理發生錯誤：{_e}")
-        import traceback; st.code(traceback.format_exc())
 
 # ───────────────────────────────────────────────────
 # TAB 3：馬達 Motor 檢驗項目
