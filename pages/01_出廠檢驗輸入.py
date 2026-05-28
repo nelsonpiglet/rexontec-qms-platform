@@ -270,10 +270,17 @@ with st.expander("📋 基本資料 / 表頭", expanded=True):
         hdr_part_no  = st.text_input("料號", placeholder="例：7720-057-00400", key="hdr_pn")
     with c3:
         _cust_opts = get_customers()
-        # 若 session_state 值不在選項內（如舊資料、編碼差異），自動修正
         if st.session_state.get("hdr_cust") not in _cust_opts:
             st.session_state["hdr_cust"] = _cust_opts[0]
-        hdr_customer = st.selectbox("客戶名稱 *", _cust_opts, key="hdr_cust")
+        def _on_cust_sel():
+            st.session_state["hdr_cust_free"] = st.session_state.get("hdr_cust", "")
+        st.selectbox("客戶名稱（快選）*", _cust_opts, key="hdr_cust",
+                      on_change=_on_cust_sel)
+        if "hdr_cust_free" not in st.session_state:
+            st.session_state["hdr_cust_free"] = st.session_state.get("hdr_cust", _cust_opts[0])
+        hdr_customer = st.text_input(
+            "↑ 可直接修改客戶名稱", key="hdr_cust_free",
+            placeholder="輸入客戶名稱")
 
     c4, c5, c6 = st.columns(3)
     with c4:
@@ -928,23 +935,38 @@ _all_inspectors  = get_inspectors()
 _all_supervisors = get_supervisors()
 sig_c1, sig_c2, sig_c3 = st.columns(3)
 with sig_c1:
-    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:4px'>檢驗員</div>",
+    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>檢驗員</div>",
                 unsafe_allow_html=True)
-    _insp_idx = _all_inspectors.index(hdr_insp) if hdr_insp in _all_inspectors else 0
-    sig_inspector = st.selectbox("檢驗員姓名", _all_inspectors,
-                                  index=_insp_idx, key="sig_insp",
-                                  label_visibility="collapsed")
+    if st.session_state.get("sig_insp") not in _all_inspectors:
+        _def_insp = hdr_insp if hdr_insp in _all_inspectors else _all_inspectors[0]
+        st.session_state["sig_insp"] = _def_insp
+    def _on_insp_sel():
+        st.session_state["sig_insp_free"] = st.session_state.get("sig_insp", "")
+    st.selectbox("下拉選取", _all_inspectors, key="sig_insp",
+                  label_visibility="collapsed", on_change=_on_insp_sel)
+    if "sig_insp_free" not in st.session_state:
+        st.session_state["sig_insp_free"] = st.session_state.get("sig_insp", _all_inspectors[0])
+    sig_inspector = st.text_input("↑ 可手填修改", key="sig_insp_free",
+                                   placeholder="輸入姓名")
     sig_insp_date = st.date_input("日期", value=date.today(),
                                    key="sig_insp_date", label_visibility="visible")
 with sig_c2:
-    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:4px'>品保主管</div>",
+    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>品保主管</div>",
                 unsafe_allow_html=True)
-    sig_supervisor = st.selectbox("品保主管姓名", _all_supervisors,
-                                   key="sig_super", label_visibility="collapsed")
+    if st.session_state.get("sig_super") not in _all_supervisors:
+        st.session_state["sig_super"] = _all_supervisors[0]
+    def _on_super_sel():
+        st.session_state["sig_super_free"] = st.session_state.get("sig_super", "")
+    st.selectbox("下拉選取", _all_supervisors, key="sig_super",
+                  label_visibility="collapsed", on_change=_on_super_sel)
+    if "sig_super_free" not in st.session_state:
+        st.session_state["sig_super_free"] = st.session_state.get("sig_super", _all_supervisors[0])
+    sig_supervisor = st.text_input("↑ 可手填修改", key="sig_super_free",
+                                    placeholder="輸入姓名")
     sig_super_date = st.date_input("日期", value=date.today(),
                                     key="sig_super_date", label_visibility="visible")
 with sig_c3:
-    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:4px'>核准</div>",
+    st.markdown("<div style='font-size:12px;color:var(--muted);margin-bottom:2px'>核准</div>",
                 unsafe_allow_html=True)
     sig_approver  = st.text_input("核准人員", placeholder="核准人員姓名",
                                    key="sig_approver", label_visibility="collapsed")
@@ -967,7 +989,7 @@ with st.expander("📄 匯出 PDF 報告（填寫中途亦可下載）", expande
         _header_for_pdf = {
             "model":        st.session_state.get("hdr_model", "─"),
             "part_no":      st.session_state.get("hdr_pn", ""),
-            "customer":     st.session_state.get("hdr_cust", "─"),
+            "customer":     hdr_customer,
             "batch_no":     st.session_state.get("hdr_batch", ""),
             "serial_range": st.session_state.get("hdr_serial", ""),
             "qty":          st.session_state.get("hdr_qty", 0),
@@ -981,9 +1003,9 @@ with st.expander("📄 匯出 PDF 報告（填寫中途亦可下載）", expande
             "company":      "rexon" if "力山" in _co_raw else "rexontec",
             "insp_method":   st.session_state.get("hdr_method", "正常"),
             "verdict":       st.session_state.get("hdr_verdict", ""),
-            "sig_inspector": st.session_state.get("sig_insp", ""),
+            "sig_inspector": sig_inspector,
             "sig_insp_date": str(st.session_state.get("sig_insp_date", "")),
-            "sig_supervisor":st.session_state.get("sig_super", ""),
+            "sig_supervisor":sig_supervisor,
             "sig_super_date":str(st.session_state.get("sig_super_date", "")),
             "sig_approver":  st.session_state.get("sig_approver", ""),
             "sig_appr_date": str(st.session_state.get("sig_appr_date", "")),
