@@ -411,6 +411,11 @@ with tab2:
         esc_templates = _esc_load()
         _esc_model_list = list(esc_templates.keys())
 
+        # ── 操作成功訊息（由 session_state 帶入，刪除後顯示）──
+        if "_esc_msg" in st.session_state:
+            st.success(st.session_state["_esc_msg"])
+            del st.session_state["_esc_msg"]
+
         # ── 從現有機種複製 ───────────────────────────
         if _esc_model_list:
             st.markdown(
@@ -451,32 +456,45 @@ with tab2:
 
         # ── 新增全新機種模板 ─────────────────────────
         with st.expander("➕ 新增全新機種模板", expanded=False):
+            st.markdown(
+                '<div style="font-size:11px;color:#e67e22;background:#fff3e0;'
+                'border-radius:5px;padding:6px 10px;margin-bottom:8px">'
+                '⚠️ 機種名稱必須與「⚙️ 基本設定」中的電調機種清單完全一致，'
+                '出廠檢驗輸入才能自動套用此模板。</div>',
+                unsafe_allow_html=True,
+            )
+            # 從設定檔取得電調機種，過濾掉「其他」與已有模板的機種
+            _cfg_esc_models = [m for m in cfg.get("esc_models", []) if m and m != "其他"]
+            _avail_models   = [m for m in _cfg_esc_models if m not in esc_templates]
             _nm1, _nm2 = st.columns(2)
             with _nm1:
-                _new_esc_name = st.text_input(
-                    "機種名稱 *", key="esc_new_model_name",
-                    placeholder="例：ES2000RX (150A)",
-                )
+                if _avail_models:
+                    _new_esc_name = st.selectbox(
+                        "選擇機種 *（來自基本設定清單）",
+                        options=_avail_models,
+                        key="esc_new_model_sel",
+                    )
+                else:
+                    st.info("所有已登記的電調機種皆已建立模板。"
+                            "如需新機種，請先至「基本設定」→「電調機種」新增。")
+                    _new_esc_name = ""
             with _nm2:
                 _new_esc_from_default = st.checkbox(
                     "從預設 ESC 共用項目複製（自動帶入 A、B 兩個 Section）",
                     key="esc_new_from_default",
                     value=True,
                 )
-            if st.button("✅ 建立機種模板", key="esc_new_model_add", type="primary"):
-                _nm = _new_esc_name.strip()
+            if _avail_models and st.button("✅ 建立機種模板", key="esc_new_model_add", type="primary"):
+                _nm = _new_esc_name
                 if not _nm:
-                    st.warning("機種名稱不可空白")
+                    st.warning("請選擇機種")
                 elif _nm in esc_templates:
                     st.warning(f"機種「{_nm}」已存在，請直接在下方編輯")
                 else:
-                    if _new_esc_from_default:
-                        _init_secs = _cp.deepcopy(_get_cfg_esc().get("esc_sections", []))
-                    else:
-                        _init_secs = []
-                    from datetime import datetime as _dt
+                    _init_secs = _cp.deepcopy(_get_cfg_esc().get("esc_sections", [])) \
+                                 if _new_esc_from_default else []
                     _esc_upsert(_nm, _init_secs)
-                    st.success(f"✅ 已建立「{_nm}」機種模板")
+                    st.session_state["_esc_msg"] = f"✅ 已建立「{_nm}」機種模板"
                     st.rerun()
 
         st.markdown("<br>", unsafe_allow_html=True)
@@ -504,10 +522,10 @@ with tab2:
                 # 機種操作列
                 _op1, _op2 = st.columns([8, 1])
                 with _op2:
-                    if st.button("🗑️ 刪除", key=f"esc_del_{_esc_model_key}",
+                    if st.button("🗑️ 刪除機種", key=f"esc_del_{_esc_model_key}",
                                  help="刪除此機種模板（無法復原）"):
                         if _esc_del_tpl(_esc_model_key):
-                            st.success(f"已刪除「{_esc_model_key}」模板")
+                            st.session_state["_esc_msg"] = f"✅ 已刪除「{_esc_model_key}」機種模板"
                             st.rerun()
 
                 # ── 新增 Section ──────────────────────
@@ -567,6 +585,7 @@ with tab2:
                                 _new_tpls[_esc_model_key]["updated_at"] = \
                                     datetime.now().strftime("%Y-%m-%d %H:%M")
                                 _esc_save_tpl(_new_tpls)
+                                st.session_state["_esc_msg"] = f"✅ 已刪除「{_sec_id}｜{_sec_label}」類別"
                                 st.rerun()
                         else:
                             st.caption(f"{len(_sec_items)} 項")
@@ -623,11 +642,16 @@ with tab2:
                                 if st.button("🗑️ 刪除",
                                              key=f"esc_edel_{_esc_model_key}_{_si}_{_ii}",
                                              use_container_width=True):
+                                    _del_name = _item["name"]
                                     _new_tpls = _cp.deepcopy(esc_templates)
                                     _new_tpls[_esc_model_key]["sections"][_si]["items"].pop(_ii)
                                     _new_tpls[_esc_model_key]["updated_at"] = \
                                         datetime.now().strftime("%Y-%m-%d %H:%M")
                                     _esc_save_tpl(_new_tpls)
+                                    st.session_state["_esc_msg"] = (
+                                        f"✅ 已從「{_esc_model_key}」→「{_sec_label}」"
+                                        f"刪除項目「{_del_name}」"
+                                    )
                                     st.rerun()
 
                             # 數值型項目額外欄位
