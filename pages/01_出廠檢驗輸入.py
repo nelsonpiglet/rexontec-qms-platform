@@ -16,6 +16,7 @@ from utils.inspection_data import (
     get_all_items, get_sections,
 )
 from utils.oqc_template_db import has_template, get_sections as get_oqc_sections
+from utils.esc_template_db import has_template as has_esc_template, get_sections as get_esc_sections
 from utils.gsheet import append_oqc_record
 from utils.auth import require_login, user_info_bar
 
@@ -212,12 +213,13 @@ with col_t2:
 product_type  = st.session_state.product_type
 is_esc        = (product_type == "esc")
 
-# ── OQC 模板動態注入（馬達專用）──────────────────────────────────
+# ── 模板動態注入（ESC per-model + OQC 馬達）──────────────────────
 _hdr_model   = st.session_state.get("hdr_model", "")
+_use_esc_tpl = is_esc and has_esc_template(_hdr_model)
 _use_oqc_tpl = (not is_esc) and has_template(_hdr_model)
 
 # 偵測模板狀態變化 → 重置結果，避免舊資料殘留
-_tpl_state_key = f"{product_type}|{_hdr_model}|{_use_oqc_tpl}"
+_tpl_state_key = f"{product_type}|{_hdr_model}|{_use_esc_tpl}|{_use_oqc_tpl}"
 if st.session_state.get("_last_tpl_state") != _tpl_state_key:
     st.session_state["_last_tpl_state"] = _tpl_state_key
     st.session_state.results = {}
@@ -236,7 +238,9 @@ if st.session_state.get("_last_tpl_state") != _tpl_state_key:
                 pass
             st.session_state["hdr_cust"] = _tpl_cust
 
-if _use_oqc_tpl:
+if _use_esc_tpl:
+    sections = get_esc_sections(_hdr_model)
+elif _use_oqc_tpl:
     sections = get_oqc_sections(_hdr_model)
 else:
     sections = get_sections(product_type)
@@ -246,8 +250,23 @@ all_items = get_all_items(sections)
 st.markdown("<hr style='border:none;border-top:1px solid var(--border);margin:8px 0 14px'>",
             unsafe_allow_html=True)
 
-# ── OQC 模板狀態提示 ────────────────────────────────────────────────
-if _use_oqc_tpl:
+# ── 模板狀態提示 ────────────────────────────────────────────────────
+if _use_esc_tpl:
+    _tpl_n_sec   = len(sections)
+    _tpl_n_items = len(all_items)
+    st.markdown(
+        f'<div style="background:#fff3e0;border:1px solid #ffcc80;border-left:4px solid #e67e22;'
+        f'border-radius:7px;padding:9px 14px;margin-bottom:10px;font-size:12px;'
+        f'display:flex;align-items:center;gap:10px">'
+        f'<span style="font-size:18px">⚡</span>'
+        f'<div><b style="color:#e67e22">ESC 機種模板已套用</b>　機種：{_hdr_model}'
+        f'　{_tpl_n_sec} 區段 / {_tpl_n_items} 項目'
+        f'<span style="color:var(--muted);font-size:11px;margin-left:8px">'
+        f'（可至系統設定 → 電調 ESC 檢驗項目 管理）</span></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+elif _use_oqc_tpl:
     _tpl_n_sec   = len(sections)
     _tpl_n_items = len(all_items)
     st.markdown(

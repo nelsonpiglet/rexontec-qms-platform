@@ -4,6 +4,7 @@ REXONTEC 力科 OQC — 系統設定
 """
 import streamlit as st
 import copy
+from datetime import datetime
 
 from utils.style import QMS_CSS, topbar, page_header
 from utils.inspection_data import get_config, save_config, _DEFAULT_CONFIG
@@ -380,10 +381,396 @@ def inspection_item_editor(product_type: str, sections_key: str):
 
 
 # ───────────────────────────────────────────────────
-# TAB 2：電調 ESC 檢驗項目
+# TAB 2：電調 ESC 檢驗項目（per-model 模板管理）
 # ───────────────────────────────────────────────────
 with tab2:
-    inspection_item_editor("esc", "esc_sections")
+    st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#f7f9fc;border:1px solid var(--border);
+            border-left:4px solid #e67e22;border-radius:6px;padding:10px 14px">
+  管理 ESC 電調各機種的檢驗項目模板。建立機種模板後，「出廠檢驗輸入」→ 電調 ESC 選取對應機種時，
+  將自動套用該機種模板。<br>
+  <span style="color:#888">尚未建立模板的機種，仍使用「⚙️ 基本設定」中的共用 ESC 預設項目。</span>
+</div>
+""", unsafe_allow_html=True)
+
+    try:
+        from utils.esc_template_db import (
+            load_templates as _esc_load, save_templates as _esc_save_tpl,
+            delete_template as _esc_del_tpl, upsert_template as _esc_upsert,
+            list_models as _esc_list_models,
+        )
+        from utils.inspection_data import get_config as _get_cfg_esc
+        import copy as _cp
+
+        esc_templates = _esc_load()
+        _esc_model_list = list(_esc_templates.keys())
+
+        # ── 從現有機種複製 ───────────────────────────
+        if _esc_model_list:
+            st.markdown(
+                '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+                '📋 快速複製現有機種模板作為新機種的起點：</div>',
+                unsafe_allow_html=True,
+            )
+            _esc_copy_opts = {m: m for m in _esc_model_list}
+            _ec1, _ec2 = st.columns([5, 1])
+            with _ec1:
+                _esc_copy_sel = st.selectbox(
+                    "選擇來源機種",
+                    options=_esc_model_list,
+                    key="esc_copy_sel",
+                    label_visibility="collapsed",
+                )
+            with _ec2:
+                if st.button("🔁 複製此機種", use_container_width=True, key="esc_do_copy"):
+                    _src_tpl = _cp.deepcopy(esc_templates[_esc_copy_sel])
+                    _base    = _esc_copy_sel
+                    _existing = set(_esc_model_list)
+                    _suffix  = "-COPY"; _n = 2
+                    while (_base + _suffix) in _existing:
+                        _suffix = f"-COPY{_n}"; _n += 1
+                    _new_key = _base + _suffix
+                    _src_tpl["model"]      = _new_key
+                    _src_tpl["created_at"] = datetime.now().strftime("%Y-%m-%d")
+                    _src_tpl["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    _new_tpls = _cp.deepcopy(esc_templates)
+                    _new_tpls[_new_key] = _src_tpl
+                    _esc_save_tpl(_new_tpls)
+                    st.rerun()
+
+            st.markdown(
+                "<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>",
+                unsafe_allow_html=True,
+            )
+
+        # ── 新增全新機種模板 ─────────────────────────
+        with st.expander("➕ 新增全新機種模板", expanded=False):
+            _nm1, _nm2 = st.columns(2)
+            with _nm1:
+                _new_esc_name = st.text_input(
+                    "機種名稱 *", key="esc_new_model_name",
+                    placeholder="例：ES2000RX (150A)",
+                )
+            with _nm2:
+                _new_esc_from_default = st.checkbox(
+                    "從預設 ESC 共用項目複製（自動帶入 A、B 兩個 Section）",
+                    key="esc_new_from_default",
+                    value=True,
+                )
+            if st.button("✅ 建立機種模板", key="esc_new_model_add", type="primary"):
+                _nm = _new_esc_name.strip()
+                if not _nm:
+                    st.warning("機種名稱不可空白")
+                elif _nm in esc_templates:
+                    st.warning(f"機種「{_nm}」已存在，請直接在下方編輯")
+                else:
+                    if _new_esc_from_default:
+                        _init_secs = _cp.deepcopy(_get_cfg_esc().get("esc_sections", []))
+                    else:
+                        _init_secs = []
+                    from datetime import datetime as _dt
+                    _esc_upsert(_nm, _init_secs)
+                    st.success(f"✅ 已建立「{_nm}」機種模板")
+                    st.rerun()
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── 各機種模板管理 ───────────────────────────
+        if not _esc_model_list:
+            st.markdown("""
+<div style="background:#fafbfc;border:2px dashed #ddd;border-radius:10px;
+            padding:40px;text-align:center;color:#bbb">
+  <div style="font-size:32px;margin-bottom:8px">⚡</div>
+  <div style="font-size:13px;font-weight:600;color:#aaa">尚無 ESC 機種模板</div>
+  <div style="font-size:11px;margin-top:6px">請使用上方「新增全新機種模板」建立第一個機種</div>
+</div>
+""", unsafe_allow_html=True)
+
+        for _esc_model_key, _esc_tpl in esc_templates.items():
+            _esc_secs   = _esc_tpl.get("sections", [])
+            _n_items    = sum(len(s.get("items", [])) for s in _esc_secs)
+            _updated    = _esc_tpl.get("updated_at", _esc_tpl.get("created_at", "─"))
+
+            with st.expander(
+                f"⚡  **{_esc_model_key}**  ·  {len(_esc_secs)} 區段  ·  {_n_items} 項目  ·  更新：{_updated}",
+                expanded=False,
+            ):
+                # 機種操作列
+                _op1, _op2 = st.columns([8, 1])
+                with _op2:
+                    if st.button("🗑️ 刪除", key=f"esc_del_{_esc_model_key}",
+                                 help="刪除此機種模板（無法復原）"):
+                        if _esc_del_tpl(_esc_model_key):
+                            st.success(f"已刪除「{_esc_model_key}」模板")
+                            st.rerun()
+
+                # ── 新增 Section ──────────────────────
+                with st.expander("➕ 新增檢驗類別（Section）", expanded=False):
+                    _sc1, _sc2, _sc3 = st.columns([2, 4, 4])
+                    with _sc1:
+                        _ns_id  = st.text_input("代號", key=f"esc_ns_id_{_esc_model_key}",
+                                                placeholder="C", max_chars=4)
+                    with _sc2:
+                        _ns_lb  = st.text_input("類別名稱", key=f"esc_ns_lb_{_esc_model_key}",
+                                                placeholder="例：電氣安規測試類")
+                    with _sc3:
+                        _ns_sub = st.text_input("副標題", key=f"esc_ns_sub_{_esc_model_key}",
+                                                placeholder="例：高壓安規設備")
+                    if st.button("新增類別", key=f"esc_ns_add_{_esc_model_key}", type="primary"):
+                        _nid = _ns_id.strip().upper()
+                        _existing_ids = [s["id"] for s in _esc_secs]
+                        if not _nid or not _ns_lb.strip():
+                            st.warning("代號與名稱不可空白")
+                        elif _nid in _existing_ids:
+                            st.warning(f"代號「{_nid}」已存在")
+                        else:
+                            _new_tpls = _cp.deepcopy(esc_templates)
+                            _new_tpls[_esc_model_key]["sections"].append({
+                                "id": _nid, "label": _ns_lb.strip(),
+                                "subtitle": _ns_sub.strip(), "items": [],
+                            })
+                            _new_tpls[_esc_model_key]["updated_at"] = \
+                                datetime.now().strftime("%Y-%m-%d %H:%M")
+                            _esc_save_tpl(_new_tpls)
+                            st.rerun()
+
+                st.markdown("<br>", unsafe_allow_html=True)
+
+                # ── 各 Section ────────────────────────
+                for _si, _sec in enumerate(_esc_secs):
+                    _sec_id    = _sec["id"]
+                    _sec_label = _sec["label"]
+                    _sec_items = _sec.get("items", [])
+
+                    _sh1, _sh2, _sh3 = st.columns([7, 1, 1])
+                    with _sh1:
+                        st.markdown(
+                            f'<div style="font-size:14px;font-weight:700;color:var(--navy);'
+                            f'border-left:4px solid #e67e22;padding-left:10px;margin-bottom:6px">'
+                            f'{_sec_id}｜{_sec_label}'
+                            f'<span style="font-size:11px;color:var(--muted);margin-left:8px">'
+                            f'{_sec.get("subtitle","")}</span></div>',
+                            unsafe_allow_html=True,
+                        )
+                    with _sh2:
+                        if not _sec_items:
+                            if st.button("刪除", key=f"esc_del_sec_{_esc_model_key}_{_si}",
+                                         help="刪除此空白類別"):
+                                _new_tpls = _cp.deepcopy(esc_templates)
+                                _new_tpls[_esc_model_key]["sections"].pop(_si)
+                                _new_tpls[_esc_model_key]["updated_at"] = \
+                                    datetime.now().strftime("%Y-%m-%d %H:%M")
+                                _esc_save_tpl(_new_tpls)
+                                st.rerun()
+                        else:
+                            st.caption(f"{len(_sec_items)} 項")
+
+                    with st.expander(
+                        f"展開 {_sec_id} 的 {len(_sec_items)} 個檢驗項目", expanded=False
+                    ):
+                        # 現有項目
+                        for _ii, _item in enumerate(_sec_items):
+                            _itype = _item.get("type", "pf")
+                            _gc    = {"CR": "#c0392b", "MA": "#d68910", "MI": "#1e8449"}.get(
+                                _item.get("grade", "MA"), "#888")
+                            st.markdown(
+                                f'<div style="background:#fafbfc;border:1px solid var(--border);'
+                                f'border-left:3px solid {_gc};border-radius:5px;'
+                                f'padding:5px 10px;margin-bottom:3px;font-size:11.5px">'
+                                f'<span style="background:{_gc};color:#fff;padding:1px 6px;'
+                                f'border-radius:3px;font-size:9px;font-weight:800;margin-right:6px">'
+                                f'{_item.get("grade","MA")}</span>'
+                                f'<b>{_item["name"]}</b>'
+                                f'<span style="color:var(--muted);font-size:10.5px;margin-left:8px">'
+                                f'規格：{_item["spec"][:40]}</span>'
+                                f'</div>',
+                                unsafe_allow_html=True,
+                            )
+                            _ec1, _ec2, _ec3, _ec4 = st.columns([3, 4, 1, 1])
+                            with _ec1:
+                                _new_name = st.text_input(
+                                    "項目名稱",
+                                    value=_item["name"],
+                                    key=f"esc_ename_{_esc_model_key}_{_si}_{_ii}",
+                                    label_visibility="collapsed",
+                                )
+                            with _ec2:
+                                _new_spec = st.text_input(
+                                    "規格標準",
+                                    value=_item["spec"],
+                                    key=f"esc_espec_{_esc_model_key}_{_si}_{_ii}",
+                                    label_visibility="collapsed",
+                                )
+                            with _ec3:
+                                if st.button("✏️ 儲存",
+                                             key=f"esc_esave_{_esc_model_key}_{_si}_{_ii}",
+                                             use_container_width=True):
+                                    _new_tpls = _cp.deepcopy(esc_templates)
+                                    _tgt = _new_tpls[_esc_model_key]["sections"][_si]["items"][_ii]
+                                    _tgt["name"] = _new_name.strip() or _item["name"]
+                                    _tgt["spec"] = _new_spec.strip() or _item["spec"]
+                                    _new_tpls[_esc_model_key]["updated_at"] = \
+                                        datetime.now().strftime("%Y-%m-%d %H:%M")
+                                    _esc_save_tpl(_new_tpls)
+                                    st.rerun()
+                            with _ec4:
+                                if st.button("🗑️ 刪除",
+                                             key=f"esc_edel_{_esc_model_key}_{_si}_{_ii}",
+                                             use_container_width=True):
+                                    _new_tpls = _cp.deepcopy(esc_templates)
+                                    _new_tpls[_esc_model_key]["sections"][_si]["items"].pop(_ii)
+                                    _new_tpls[_esc_model_key]["updated_at"] = \
+                                        datetime.now().strftime("%Y-%m-%d %H:%M")
+                                    _esc_save_tpl(_new_tpls)
+                                    st.rerun()
+
+                            # 數值型項目額外欄位
+                            if _itype == "num":
+                                _nc1, _nc2, _nc3, _nc4 = st.columns([2, 2, 2, 2])
+                                with _nc1:
+                                    st.caption(f"單位：{_item.get('unit','')}")
+                                with _nc2:
+                                    _cur_min = "" if _item.get("min") is None else str(_item["min"])
+                                    _new_min = st.text_input(
+                                        "最小值",
+                                        value=_cur_min,
+                                        key=f"esc_emin_{_esc_model_key}_{_si}_{_ii}",
+                                        placeholder="無限制",
+                                    )
+                                with _nc3:
+                                    _cur_max = "" if _item.get("max") is None else str(_item["max"])
+                                    _new_max = st.text_input(
+                                        "最大值",
+                                        value=_cur_max,
+                                        key=f"esc_emax_{_esc_model_key}_{_si}_{_ii}",
+                                        placeholder="無限制",
+                                    )
+                                with _nc4:
+                                    st.caption("")
+                                    if st.button("更新範圍",
+                                                 key=f"esc_erange_{_esc_model_key}_{_si}_{_ii}"):
+                                        _new_tpls = _cp.deepcopy(esc_templates)
+                                        _tgt = _new_tpls[_esc_model_key]["sections"][_si]["items"][_ii]
+                                        try:
+                                            _tgt["min"] = float(_new_min) if _new_min.strip() else None
+                                            _tgt["max"] = float(_new_max) if _new_max.strip() else None
+                                            _new_tpls[_esc_model_key]["updated_at"] = \
+                                                datetime.now().strftime("%Y-%m-%d %H:%M")
+                                            _esc_save_tpl(_new_tpls)
+                                            st.rerun()
+                                        except ValueError:
+                                            st.error("最小值/最大值請填入數字")
+
+                            st.markdown("---")
+
+                        # ── 新增項目表單 ─────────────────
+                        st.markdown(
+                            f'<div style="font-size:12px;font-weight:700;color:#e67e22;'
+                            f'margin-bottom:8px">➕ 新增項目至 {_sec_id}｜{_sec_label}</div>',
+                            unsafe_allow_html=True,
+                        )
+                        _f1, _f2, _f3, _f4 = st.columns([3, 4, 1, 1])
+                        with _f1:
+                            _ni_name = st.text_input(
+                                "項目名稱*",
+                                key=f"esc_ni_name_{_esc_model_key}_{_si}",
+                                placeholder="例：絕緣電阻測試",
+                            )
+                        with _f2:
+                            _ni_spec = st.text_input(
+                                "規格標準*",
+                                key=f"esc_ni_spec_{_esc_model_key}_{_si}",
+                                placeholder="例：≧100 MΩ",
+                            )
+                        with _f3:
+                            _ni_grade = st.selectbox(
+                                "等級", ["MA", "CR", "MI"],
+                                key=f"esc_ni_grade_{_esc_model_key}_{_si}",
+                            )
+                        with _f4:
+                            _ni_type = st.selectbox(
+                                "類型", ["pf（通過/失敗）", "num（數值量測）"],
+                                key=f"esc_ni_type_{_esc_model_key}_{_si}",
+                            )
+                        _ni_tool = st.text_input(
+                            "量測工具",
+                            key=f"esc_ni_tool_{_esc_model_key}_{_si}",
+                            placeholder="例：耐壓測試機",
+                        )
+                        _type_key = "num" if _ni_type.startswith("num") else "pf"
+                        if _type_key == "num":
+                            _u1, _u2, _u3 = st.columns(3)
+                            with _u1:
+                                _ni_unit = st.text_input(
+                                    "單位",
+                                    key=f"esc_ni_unit_{_esc_model_key}_{_si}",
+                                    placeholder="例：MΩ",
+                                )
+                            with _u2:
+                                _ni_min_s = st.text_input(
+                                    "最小值（空白=無限制）",
+                                    key=f"esc_ni_min_{_esc_model_key}_{_si}",
+                                )
+                            with _u3:
+                                _ni_max_s = st.text_input(
+                                    "最大值（空白=無限制）",
+                                    key=f"esc_ni_max_{_esc_model_key}_{_si}",
+                                )
+                        else:
+                            _ni_unit = ""; _ni_min_s = ""; _ni_max_s = ""
+
+                        if st.button(
+                            "新增項目",
+                            key=f"esc_ni_add_{_esc_model_key}_{_si}",
+                            type="primary",
+                        ):
+                            if not _ni_name.strip() or not _ni_spec.strip():
+                                st.warning("項目名稱與規格標準不可空白")
+                            else:
+                                _new_iid  = f"{_sec_id}{len(_sec_items)+1}"
+                                _new_no   = f"{len(_sec_items)+1}.0"
+                                _new_item = {
+                                    "id": _new_iid, "no": _new_no,
+                                    "name": _ni_name.strip(),
+                                    "spec": _ni_spec.strip(),
+                                    "grade": _ni_grade,
+                                    "type": _type_key,
+                                    "tool": _ni_tool.strip(),
+                                }
+                                if _type_key == "num":
+                                    _new_item["unit"] = _ni_unit.strip()
+                                    try:
+                                        _new_item["min"] = float(_ni_min_s) if _ni_min_s.strip() else None
+                                        _new_item["max"] = float(_ni_max_s) if _ni_max_s.strip() else None
+                                    except ValueError:
+                                        st.error("最小值/最大值請填入數字")
+                                        st.stop()
+                                _new_tpls = _cp.deepcopy(esc_templates)
+                                _new_tpls[_esc_model_key]["sections"][_si]["items"].append(_new_item)
+                                _new_tpls[_esc_model_key]["updated_at"] = \
+                                    datetime.now().strftime("%Y-%m-%d %H:%M")
+                                _esc_save_tpl(_new_tpls)
+                                st.rerun()
+
+                    st.markdown("<br>", unsafe_allow_html=True)
+
+        # ── 共用預設項目（always-visible fallback） ──
+        st.markdown(
+            "<hr style='border:none;border-top:1px solid var(--border);margin:20px 0'>",
+            unsafe_allow_html=True,
+        )
+        with st.expander("⚙️ 共用預設 ESC 檢驗項目（未建立機種模板時使用）", expanded=False):
+            st.markdown(
+                '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
+                '以下為所有未建立機種模板時使用的共用預設項目，可在「基本設定」→「共用項目」中修改。</div>',
+                unsafe_allow_html=True,
+            )
+            inspection_item_editor("esc", "esc_sections")
+
+    except Exception as _e:
+        st.error(f"❌ ESC 模板管理發生錯誤：{_e}")
+        import traceback; st.code(traceback.format_exc())
 
 # ───────────────────────────────────────────────────
 # TAB 3：馬達 Motor 檢驗項目
