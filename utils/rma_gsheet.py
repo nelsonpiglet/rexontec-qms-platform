@@ -22,12 +22,12 @@ COLUMNS = [
     "客戶公司", "聯絡人", "聯絡電話", "客戶Email",
     "馬達數量", "維修類型", "維修狀態", "優先等級", "備註",
     "故障照片連結",
-    # ─── 五步技術檢測欄位 ────────────────────────────
-    "S1-外殼撞傷", "S1-軸心歪斜", "S1-沙土侵入", "S1-螺絲裂痕",
-    "S2-異音", "S2-卡頓", "S2-軸承鬆動",
+    # ─── 技術檢測欄位 ────────────────────────────────
+    "S1-外殼撞傷", "S1-軸心歪斜", "S1-沙土侵入", "S1-螺絲裂痕", "S1-正常",
+    "S2-異音", "S2-卡頓", "S2-軸承鬆動", "S2-正常",
     "S3-AB阻值", "S3-BC阻值", "S3-CA阻值", "S3-線圈異常",
-    "S4-高震動", "S4-高溫", "S4-無法啟動",
-    "S5-線圈燒毀", "S5-磁鐵脫落", "S5-生鏽",
+    "S4-高震動", "S4-高溫", "S4-無法啟動", "S4-正常",
+    "S5-線圈燒毀", "S5-磁鐵脫落", "S5-生鏽", "S5-正常",
     "最終判定", "保固判定", "維修方式", "是否報廢", "五步檢測時間",
     # ─── 分離技術判定欄位 ─────────────────────────
     "技術判定", "是否可維修", "維修成本評估",
@@ -195,7 +195,7 @@ def delete_case(rma_id: str, hard: bool = False) -> bool:
 
 
 def update_detection(rma_id: str, data: dict) -> bool:
-    """五步技術檢測結果批次寫入"""
+    """技術檢測結果批次寫入（支援自定義項目動態新增欄位）"""
     import gspread.utils as gu
     sheet = get_sheet()
     ensure_headers(sheet)
@@ -204,6 +204,27 @@ def update_detection(rma_id: str, data: dict) -> bool:
         return False
     headers = sheet.row_values(1)
     col_map = {h.strip(): i + 1 for i, h in enumerate(headers) if h.strip()}
+
+    # ── 自動新增缺少的欄位（自定義項目第一次寫入時）──────────
+    missing = [k for k in data if k not in col_map]
+    if missing:
+        new_col_count = len(headers) + len(missing) + 5
+        if sheet.col_count < new_col_count:
+            sheet.resize(cols=new_col_count)
+        next_col = len([h for h in headers if h.strip()]) + 1
+        for col_name in missing:
+            # 找到第一個空白欄填入
+            while next_col <= len(headers) and headers[next_col - 1].strip():
+                next_col += 1
+            headers_padded = headers + [""] * max(0, next_col - len(headers))
+            if next_col > len(headers_padded):
+                headers_padded.extend([""] * (next_col - len(headers_padded)))
+            headers_padded[next_col - 1] = col_name
+            col_map[col_name] = next_col
+            next_col += 1
+            headers = headers_padded
+        sheet.update("A1", [headers])
+
     updates = [
         {"range": gu.rowcol_to_a1(row_num, col_map[col]), "values": [[str(val)]]}
         for col, val in data.items()

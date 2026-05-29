@@ -9,6 +9,11 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 from utils.style      import QMS_CSS, topbar, page_header
 from utils.rma_config import load_config, save_config
+from utils.rma_detection_db import (
+    load_custom as _det_load, save_custom as _det_save,
+    add_custom_item as _det_add, remove_custom_item as _det_remove,
+    STANDARD_STEPS, STANDARD_ITEMS,
+)
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 維修系統設定",
@@ -259,3 +264,126 @@ if all_set:
     st.success("🎉 Email 通知已就緒，系統將自動發送通知給業務。")
 else:
     st.warning("⚠️  Email 通知尚未完整設定，請填入必填欄位並儲存。")
+
+# ════════════════════════════════════════════════════
+# 技術檢測項目設定
+# ════════════════════════════════════════════════════
+st.markdown("<br>", unsafe_allow_html=True)
+st.markdown("""
+<div class="card" style="margin-top:8px">
+  <div class="card-header">
+    <div class="card-title">
+      <span class="card-dot" style="background:var(--teal)"></span>
+      🔧 技術檢測項目設定
+    </div>
+  </div>
+</div>""", unsafe_allow_html=True)
+
+st.markdown("""
+<div style="font-size:12px;color:var(--muted);margin-bottom:14px;
+            background:#f7f9fc;border:1px solid var(--border);
+            border-left:4px solid #1a9b7a;border-radius:6px;padding:10px 14px">
+  在各 Step 下新增自定義 checkbox 項目。標準項目（外殼撞傷 / 異音 等）無法刪除，
+  只能新增額外的自定義項目。新增後將自動寫入 Google Sheets 作為新欄位。
+</div>
+""", unsafe_allow_html=True)
+
+# ── 僅把 import 包在 try；UI 不放 try，讓 st.rerun() 正常傳播 ──
+_det_ok = True
+try:
+    _det_custom = _det_load()
+except Exception as _det_err:
+    st.error(f"❌ 無法讀取檢測項目設定：{_det_err}")
+    _det_ok = False
+
+if "_det_msg" in st.session_state:
+    st.success(st.session_state.pop("_det_msg"))
+
+if _det_ok:
+    for _step in STANDARD_STEPS:
+        _sid   = _step["id"]
+        _sname = _step["name"]
+        _sicon = _step["icon"]
+        _cust  = _det_custom.get(_sid, [])
+        _std   = STANDARD_ITEMS.get(_sid, [])
+
+        with st.expander(
+            f"{_sicon} {_sid} {_sname}  ·  標準 {len(_std)} 項 + 自定義 {len(_cust)} 項",
+            expanded=False,
+        ):
+            # 標準項目（唯讀）
+            st.markdown(
+                '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">📌 標準項目（唯讀）：</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                " &nbsp;·&nbsp; ".join(
+                    f'<span style="background:#f0f4ff;padding:2px 8px;border-radius:4px;'
+                    f'font-size:11.5px">{x}</span>' for x in _std
+                ),
+                unsafe_allow_html=True,
+            )
+            st.markdown("<br>", unsafe_allow_html=True)
+
+            # 自定義項目
+            if _cust:
+                st.markdown(
+                    '<div style="font-size:11px;color:var(--muted);margin-bottom:4px">✏️ 自定義項目：</div>',
+                    unsafe_allow_html=True,
+                )
+                for _ci, _citem in enumerate(_cust):
+                    _cl1, _cl2 = st.columns([8, 1])
+                    with _cl1:
+                        st.markdown(
+                            f'<div style="background:#e8f8f5;border:1px solid #a9dfbf;'
+                            f'border-radius:5px;padding:5px 12px;font-size:12px">'
+                            f'<b>{_citem.get("label", _citem["id"])}</b>'
+                            f'<span style="color:var(--muted);margin-left:8px;font-size:10px">id: {_citem["id"]}</span>'
+                            f'</div>',
+                            unsafe_allow_html=True,
+                        )
+                    with _cl2:
+                        if st.button("🗑️", key=f"det_del_{_sid}_{_ci}",
+                                     help=f"刪除「{_citem.get('label', _citem['id'])}」"):
+                            if _det_remove(_sid, _citem["id"]):
+                                st.session_state["_det_msg"] = (
+                                    f"✅ 已從 {_sid} {_sname} 刪除「{_citem.get('label', _citem['id'])}」"
+                                )
+                            st.rerun()
+                st.markdown("<br>", unsafe_allow_html=True)
+            else:
+                st.caption("（目前無自定義項目）")
+                st.markdown("<br>", unsafe_allow_html=True)
+
+            # 新增表單
+            st.markdown(
+                f'<div style="font-size:12px;font-weight:700;color:#1a9b7a;margin-bottom:6px">'
+                f'➕ 新增項目至 {_sid} {_sname}</div>',
+                unsafe_allow_html=True,
+            )
+            _da1, _da2 = st.columns([4, 4])
+            with _da1:
+                _new_label = st.text_input(
+                    "顯示名稱*",
+                    key=f"det_add_lbl_{_sid}",
+                    placeholder="例：防水測試",
+                )
+            with _da2:
+                _new_id = st.text_input(
+                    "欄位 ID*（英文/中文皆可，不可重複）",
+                    key=f"det_add_id_{_sid}",
+                    placeholder="例：waterproof",
+                )
+            if st.button("新增項目", key=f"det_add_btn_{_sid}", type="primary"):
+                _lbl = _new_label.strip()
+                _nid = _new_id.strip()
+                if not _lbl or not _nid:
+                    st.warning("顯示名稱與欄位 ID 不可空白")
+                elif _nid in [x["id"] for x in _cust]:
+                    st.warning(f"ID「{_nid}」已存在，請換一個")
+                elif _nid in _std:
+                    st.warning(f"「{_nid}」與標準項目衝突，請換一個 ID")
+                else:
+                    _det_add(_sid, _nid, _lbl)
+                    st.session_state["_det_msg"] = f"✅ 已在 {_sid} {_sname} 新增「{_lbl}」"
+                    st.rerun()

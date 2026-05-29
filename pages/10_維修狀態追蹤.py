@@ -8,6 +8,7 @@ import re
 import urllib.request
 from datetime import datetime, timedelta
 from utils.rma_gsheet       import load_all_cases, update_status, get_photos, delete_case, update_detection
+from utils.rma_detection_db import get_step_custom_items
 from utils.style             import QMS_CSS, topbar, page_header, stat_cards, status_badge, STATUS_EMOJI, gsheet_error_banner
 from utils.rma_email_notify  import notify_case_closed
 
@@ -267,13 +268,13 @@ if submitted_u:
         else:
             st.error(f"❌ 找不到 {sel_rma}，請重新整理後再試。")
 
-# ── 🔧 五步技術檢測區塊 ──────────────────────────────
+# ── 🔧 技術檢測區塊 ──────────────────────────────────
 st.markdown("""
 <div class="card" style="margin-top:8px">
   <div class="card-header">
     <div class="card-title">
       <span class="card-dot" style="background:var(--teal)"></span>
-      🔧 技術檢測（五步檢測法）
+      🔧 技術檢測
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
@@ -342,6 +343,31 @@ if not det_df.empty:
     _et_stop_key  = f"et_stop_{det_rma}"
     _et_scrap_key = f"et_scrap_{det_rma}"
 
+    # ── 預載各 Step 自定義項目 ──
+    _s1_custom = get_step_custom_items("S1")
+    _s2_custom = get_step_custom_items("S2")
+    _s4_custom = get_step_custom_items("S4")
+    _s5_custom = get_step_custom_items("S5")
+
+    # ── 輔助：渲染自定義 checkbox（每 4 個一行）──
+    def _render_custom(step_id, custom_items, suffix):
+        """渲染自定義項目，回傳 {col_key: bool}"""
+        vals = {}
+        if not custom_items:
+            return vals
+        for bi in range(0, len(custom_items), 4):
+            batch = custom_items[bi:bi+4]
+            cols  = st.columns(4)
+            for j, item in enumerate(batch):
+                col_key = f"{step_id}-{item['id']}"
+                with cols[j]:
+                    vals[col_key] = st.checkbox(
+                        item.get("label", item["id"]),
+                        value=_b(col_key),
+                        key=f"{step_id.lower()}c{bi+j}_{suffix}",
+                    )
+        return vals
+
     # ───────────── Step 1 外觀檢測 ─────────────
     st.markdown(
         '<div style="font-size:13px;font-weight:700;color:var(--navy);'
@@ -354,6 +380,9 @@ if not det_df.empty:
     with c1b: s1_axis  = st.checkbox("軸心歪斜", value=_b("S1-軸心歪斜"), key=f"s1ax_{det_rma}")
     with c1c: s1_sand  = st.checkbox("沙土侵入", value=_b("S1-沙土侵入"), key=f"s1sd_{det_rma}")
     with c1d: s1_screw = st.checkbox("螺絲裂痕", value=_b("S1-螺絲裂痕"), key=f"s1sc_{det_rma}")
+    _c1e1, _c1e2, _c1e3, _c1e4 = st.columns(4)
+    with _c1e1: s1_ok = st.checkbox("正常", value=_b("S1-正常"), key=f"s1ok_{det_rma}")
+    _s1_cust_vals = _render_custom("S1", _s1_custom, det_rma)
 
     # ── 人為撞擊判定：提前終止檢測 ──────────────────
     if s1_axis and s1_shell:
@@ -387,11 +416,12 @@ if not det_df.empty:
     _is_early_scrap = st.session_state.get(_et_scrap_key, False)
 
     # ── 預設 Steps 2–5 變數（提前終止時使用）──
-    s2_noise = s2_stuck = s2_bearing = False
+    s2_noise = s2_stuck = s2_bearing = s2_ok = False
     s3_ab = s3_bc = s3_ca = 0.0
     coil_bad, coil_dev = False, 0.0
-    s4_vib = s4_heat = s4_start = False
-    s5_coil = s5_magnet = s5_rust = False
+    s4_vib = s4_heat = s4_start = s4_ok = False
+    s5_coil = s5_magnet = s5_rust = s5_ok = False
+    _s2_cust_vals = {}; _s4_cust_vals = {}; _s5_cust_vals = {}
 
     if not _is_early_stop:
         # ───────────── Step 2 手感測試 ─────────────
@@ -401,10 +431,12 @@ if not det_df.empty:
             'Step 2 🤚 手感測試</div>',
             unsafe_allow_html=True,
         )
-        c2a, c2b, c2c, _ = st.columns(4)
+        c2a, c2b, c2c, c2d = st.columns(4)
         with c2a: s2_noise   = st.checkbox("異音",     value=_b("S2-異音"),     key=f"s2no_{det_rma}")
         with c2b: s2_stuck   = st.checkbox("卡頓",     value=_b("S2-卡頓"),     key=f"s2st_{det_rma}")
         with c2c: s2_bearing = st.checkbox("軸承鬆動", value=_b("S2-軸承鬆動"), key=f"s2be_{det_rma}")
+        with c2d: s2_ok      = st.checkbox("正常",     value=_b("S2-正常"),     key=f"s2ok_{det_rma}")
+        _s2_cust_vals = _render_custom("S2", _s2_custom, det_rma)
 
         # ───────────── Step 3 電氣測試 ─────────────
         st.markdown(
@@ -432,10 +464,12 @@ if not det_df.empty:
             'Step 4 🔌 通電測試</div>',
             unsafe_allow_html=True,
         )
-        c4a, c4b, c4c, _ = st.columns(4)
+        c4a, c4b, c4c, c4d = st.columns(4)
         with c4a: s4_vib   = st.checkbox("高震動",   value=_b("S4-高震動"),   key=f"s4vb_{det_rma}")
         with c4b: s4_heat  = st.checkbox("高溫",     value=_b("S4-高溫"),     key=f"s4ht_{det_rma}")
         with c4c: s4_start = st.checkbox("無法啟動", value=_b("S4-無法啟動"), key=f"s4st_{det_rma}")
+        with c4d: s4_ok    = st.checkbox("正常",     value=_b("S4-正常"),     key=f"s4ok_{det_rma}")
+        _s4_cust_vals = _render_custom("S4", _s4_custom, det_rma)
 
         # ───────────── Step 5 拆解分析 ─────────────
         st.markdown(
@@ -444,10 +478,12 @@ if not det_df.empty:
             'Step 5 🔩 拆解分析</div>',
             unsafe_allow_html=True,
         )
-        c5a, c5b, c5c, _ = st.columns(4)
+        c5a, c5b, c5c, c5d = st.columns(4)
         with c5a: s5_coil   = st.checkbox("線圈燒毀", value=_b("S5-線圈燒毀"), key=f"s5co_{det_rma}")
         with c5b: s5_magnet = st.checkbox("磁鐵脫落", value=_b("S5-磁鐵脫落"), key=f"s5mg_{det_rma}")
         with c5c: s5_rust   = st.checkbox("生鏽",     value=_b("S5-生鏽"),     key=f"s5rs_{det_rma}")
+        with c5d: s5_ok     = st.checkbox("正常",     value=_b("S5-正常"),     key=f"s5ok_{det_rma}")
+        _s5_cust_vals = _render_custom("S5", _s5_custom, det_rma)
 
         # 線圈燒毀確認提示
         if coil_bad and s5_coil:
@@ -539,9 +575,11 @@ if not det_df.empty:
             "S1-軸心歪斜": "是" if s1_axis  else "否",
             "S1-沙土侵入": "是" if s1_sand  else "否",
             "S1-螺絲裂痕": "是" if s1_screw else "否",
+            "S1-正常":     "是" if s1_ok    else "否",
             "S2-異音":     "是" if s2_noise   else "否",
             "S2-卡頓":     "是" if s2_stuck   else "否",
             "S2-軸承鬆動": "是" if s2_bearing else "否",
+            "S2-正常":     "是" if s2_ok      else "否",
             "S3-AB阻值":   round(s3_ab, 3),
             "S3-BC阻值":   round(s3_bc, 3),
             "S3-CA阻值":   round(s3_ca, 3),
@@ -549,9 +587,11 @@ if not det_df.empty:
             "S4-高震動":   "是" if s4_vib   else "否",
             "S4-高溫":     "是" if s4_heat  else "否",
             "S4-無法啟動": "是" if s4_start else "否",
+            "S4-正常":     "是" if s4_ok    else "否",
             "S5-線圈燒毀": "是" if s5_coil   else "否",
             "S5-磁鐵脫落": "是" if s5_magnet else "否",
             "S5-生鏽":     "是" if s5_rust   else "否",
+            "S5-正常":     "是" if s5_ok     else "否",
             "最終判定":    final_verdict,
             "保固判定":    warranty_judg,
             "技術判定":    tech_judg_det,
@@ -560,11 +600,16 @@ if not det_df.empty:
             "是否可維修":  is_repairable,
             "維修成本評估": cost_eval,
             "五步檢測時間": now_str,
+            # ── 自定義項目 ──────────────────────────
+            **{k: "是" if v else "否" for k, v in _s1_cust_vals.items()},
+            **{k: "是" if v else "否" for k, v in _s2_cust_vals.items()},
+            **{k: "是" if v else "否" for k, v in _s4_cust_vals.items()},
+            **{k: "是" if v else "否" for k, v in _s5_cust_vals.items()},
         }
         with st.spinner("儲存中..."):
             ok = update_detection(det_rma, det_data)
         if ok:
-            st.success(f"✅ {det_rma} 五步檢測結果已儲存")
+            st.success(f"✅ {det_rma} 技術檢測結果已儲存")
             # 清除提前終止旗標
             st.session_state.pop(_et_stop_key, None)
             st.session_state.pop(_et_scrap_key, None)

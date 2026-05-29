@@ -375,7 +375,7 @@ def generate_repair_pdf(row: dict) -> bytes:
     if _has_det:
         if pdf.get_y() > PAGE_H - 22 - 70:
             pdf.add_page()
-        pdf.section_title("四", "五步技術檢測", "Five-Step Inspection")
+        pdf.section_title("四", "技術檢測", "Technical Inspection")
         _y = ("是","否")
         pdf.detect_row(
             "Step1 外觀檢測",
