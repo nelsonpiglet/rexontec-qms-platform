@@ -47,24 +47,32 @@ def get_client():
 
 
 def get_sheet():
-    client = get_client()
-    ss     = client.open_by_key(SPREADSHEET_ID)
-    titles = [ws.title for ws in ss.worksheets()]
+    client    = get_client()
+    ss        = client.open_by_key(SPREADSHEET_ID)
+    titles    = [ws.title for ws in ss.worksheets()]
+    need_cols = len(COLUMNS) + 5          # 多 5 欄緩衝，未來擴欄不用改
     if SHEET_NAME in titles:
-        return ss.worksheet(SHEET_NAME)
-    ws = ss.add_worksheet(title=SHEET_NAME, rows=2000, cols=26)
+        ws = ss.worksheet(SHEET_NAME)
+        # 若現有欄數不足（舊表），自動擴欄
+        if ws.col_count < len(COLUMNS):
+            ws.resize(cols=need_cols)
+        return ws
+    ws = ss.add_worksheet(title=SHEET_NAME, rows=2000, cols=need_cols)
     ws.insert_row(COLUMNS, 1)
     get_client.clear()
     return ws
 
 
 def ensure_headers(sheet):
+    # 先確保欄數足夠，避免 exceeds grid limits
+    if sheet.col_count < len(COLUMNS):
+        sheet.resize(cols=len(COLUMNS) + 5)
     first = sheet.row_values(1)
     if not first or first[0] != "編號":
         sheet.insert_row(COLUMNS, 1)
     elif len(first) < len(COLUMNS):
-        for i in range(len(first), len(COLUMNS)):
-            sheet.update_cell(1, i + 1, COLUMNS[i])
+        # 一次批次更新整列標題，比 update_cell 逐欄快很多
+        sheet.update("A1", [COLUMNS])
 
 
 def generate_rma_id(sheet) -> str:
