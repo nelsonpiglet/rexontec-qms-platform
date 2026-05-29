@@ -1,14 +1,15 @@
 """
 REXONTEC 力科品質指揮平台 — 維修保養系統
-維修案件輸入（支援單顆 / 批次多顆）
+維修案件輸入（主單 + 子件架構）
 """
 import streamlit as st
 import pandas as pd
 from datetime import datetime
-from utils.rma_gsheet      import append_case, append_batch_cases, update_photos
-from utils.style           import QMS_CSS, topbar, page_header
-from utils.rma_email_notify import notify_new_rma
-from utils.rma_drive_upload import upload_photos
+from utils.rma_master_gsheet import append_master
+from utils.rma_detail_gsheet import append_detail, append_batch_details, update_detail_photos
+from utils.style             import QMS_CSS, topbar, page_header
+from utils.rma_email_notify  import notify_new_rma
+from utils.rma_drive_upload  import upload_photos
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 維修輸入",
@@ -43,7 +44,7 @@ with c6:
     if st.button("📄 報告", use_container_width=True):
         st.switch_page("pages/14_維修報告.py")
 
-st.markdown(page_header("維修案件輸入", "RMA / New Repair Order", "NEW"),
+st.markdown(page_header("維修案件輸入", "RMA Master + Detail / New Repair Order", "NEW"),
             unsafe_allow_html=True)
 
 MOTOR_MODELS = [
@@ -73,64 +74,53 @@ HR = "<hr style='border:none;border-top:1px solid var(--border);margin:6px 0 2px
 
 # ── 成功畫面 ──────────────────────────────────
 if "submitted_rma" in st.session_state:
-    rma_list = st.session_state.submitted_rma
-    info     = st.session_state.submitted_info
-    is_batch = len(rma_list) > 1
+    master_id   = st.session_state.submitted_rma
+    detail_ids  = st.session_state.submitted_detail_ids
+    info        = st.session_state.submitted_info
+    motors      = info.get("motors", [])
 
-    if is_batch:
-        st.markdown(f"""
-        <div style="max-width:640px;margin:0 auto;padding:16px 0">
-          <div class="rma-card">
-            <div style="font-size:44px;margin-bottom:8px">✅</div>
-            <div style="font-size:20px;font-weight:900;color:var(--navy);margin-bottom:6px">
-              批次維修案件建立成功
-            </div>
-            <div style="font-size:13px;color:var(--muted);margin-bottom:14px">
-              共 {len(rma_list)} 顆馬達 &nbsp;|&nbsp; 客戶：{info['company']}
-            </div>
-          </div>
-        </div>""", unsafe_allow_html=True)
+    st.markdown(f"""
+    <div style="max-width:700px;margin:0 auto;padding:16px 0">
+      <div class="rma-card">
+        <div style="font-size:44px;margin-bottom:8px">✅</div>
+        <div style="font-size:20px;font-weight:900;color:var(--navy);margin-bottom:6px">
+          維修主單建立成功
+        </div>
+        <div class="rma-badge" style="font-size:20px;letter-spacing:2px">{master_id}</div>
+        <div style="margin-top:12px;font-size:13px;color:var(--muted)">
+          客戶：{info['company']} &nbsp;|&nbsp;
+          共 {len(detail_ids)} 顆馬達 &nbsp;|&nbsp;
+          優先等級：{info['priority']}
+        </div>
+      </div>
+    </div>""", unsafe_allow_html=True)
 
-        rma_df = pd.DataFrame({
-            "項次":       list(range(1, len(rma_list)+1)),
-            "RMA 編號":   rma_list,
-            "馬達序號 S/N": [m["motor_sn"]   for m in info["motors"]],
-            "型號":       [m["model"]        for m in info["motors"]],
-            "故障類別":   [m["fault_type"]   for m in info["motors"]],
+    if motors:
+        detail_df = pd.DataFrame({
+            "子件編號":   detail_ids,
+            "馬達序號 S/N": [m.get("motor_sn","")   for m in motors],
+            "型號":       [m.get("model","")        for m in motors],
+            "故障類別":   [m.get("fault_type","")   for m in motors],
         })
-        st.dataframe(rma_df, use_container_width=True, hide_index=True,
-                     height=min(400, 56 + len(rma_df)*38))
-    else:
-        rma = rma_list[0]
-        st.markdown(f"""
-        <div style="max-width:540px;margin:0 auto;text-align:center;padding:16px 0">
-          <div class="rma-card">
-            <div style="font-size:52px;margin-bottom:8px">✅</div>
-            <div style="font-size:20px;font-weight:900;color:var(--navy);margin-bottom:4px">
-              維修案件建立成功
-            </div>
-            <div class="rma-badge">{rma}</div>
-            <div style="margin-top:12px;font-size:13px;color:var(--muted)">
-              📦 {info['model']} &nbsp;|&nbsp; S/N {info['motor_sn']}<br>
-              ⚠️ {info['fault_type']} &nbsp;|&nbsp; 優先 {info['priority']}
-            </div>
-            <div style="margin-top:8px;font-size:11px;color:var(--dim)">
-              建立時間：{datetime.now().strftime('%Y/%m/%d %H:%M')}
-            </div>
-          </div>
-        </div>""", unsafe_allow_html=True)
+        st.dataframe(detail_df, use_container_width=True, hide_index=True,
+                     height=min(400, 56 + len(detail_df)*38))
 
     st.markdown("<br>", unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([1, 1, 1])
-    with c2:
+    c1c, c2c, c3c = st.columns([1, 1, 1])
+    with c2c:
         if st.button("＋ 新增下一筆", use_container_width=True, type="primary"):
-            del st.session_state["submitted_rma"]
-            del st.session_state["submitted_info"]
+            for k in ["submitted_rma","submitted_detail_ids","submitted_info"]:
+                st.session_state.pop(k, None)
             st.rerun()
+    with c3c:
+        if st.button("📋 前往狀態追蹤", use_container_width=True):
+            for k in ["submitted_rma","submitted_detail_ids","submitted_info"]:
+                st.session_state.pop(k, None)
+            st.switch_page("pages/10_維修狀態追蹤.py")
     st.stop()
 
 
-# ── 輸入模式切換 ──────────────────────────────
+# ── 送修模式 ──────────────────────────────────
 st.markdown("""
 <div class="card">
   <div class="card-header">
@@ -149,21 +139,19 @@ mode = st.radio(
 )
 is_batch_mode = mode.startswith("📦")
 
-
 # ── 表單主體 ──────────────────────────────────
 with st.form("repair_form", clear_on_submit=False):
 
-    # 區段 1：客戶資訊
+    # ① 客戶資訊
     section("1", "客戶資訊", "Customer Information")
     c1, c2, c3 = st.columns(3)
     with c1: company = st.text_input("客戶公司名稱 *", placeholder="例：台灣無人機科技股份有限公司")
     with c2: contact = st.text_input("聯絡人 *",       placeholder="姓名")
     with c3: phone   = st.text_input("聯絡電話",        placeholder="02-XXXX-XXXX")
     email = st.text_input("電子郵件（選填）", placeholder="example@company.com")
-
     st.markdown(HR, unsafe_allow_html=True)
 
-    # 區段 2：馬達資訊
+    # ② 馬達資訊
     if not is_batch_mode:
         section("2", "馬達資訊", "Motor Information")
         c4, c5, c6 = st.columns(3)
@@ -183,12 +171,9 @@ with st.form("repair_form", clear_on_submit=False):
         </div>""", unsafe_allow_html=True)
 
         bd1, bd2, bd3 = st.columns(3)
-        with bd1:
-            default_model = st.selectbox("預設型號（批次套用）", MOTOR_MODELS, key="dm")
-        with bd2:
-            default_fault = st.selectbox("預設故障類別（批次套用）", FAULT_TYPES, key="df")
-        with bd3:
-            crash = st.radio("曾撞擊/墜機？", ["否", "是"], horizontal=True, key="bc")
+        with bd1: default_model = st.selectbox("預設型號（批次套用）", MOTOR_MODELS, key="dm")
+        with bd2: default_fault = st.selectbox("預設故障類別（批次套用）", FAULT_TYPES,  key="df")
+        with bd3: crash         = st.radio("曾撞擊/墜機？", ["否", "是"], horizontal=True, key="bc")
 
         if "batch_motors" not in st.session_state:
             st.session_state.batch_motors = pd.DataFrame({
@@ -210,7 +195,6 @@ with st.form("repair_form", clear_on_submit=False):
             hide_index=True,
             key="batch_editor",
         )
-
         flight_hours = 0
         motor_sn     = ""
         model        = default_model
@@ -218,7 +202,7 @@ with st.form("repair_form", clear_on_submit=False):
 
     st.markdown(HR, unsafe_allow_html=True)
 
-    # 區段 3：故障資訊
+    # ③ 故障資訊
     if not is_batch_mode:
         section("3", "故障資訊", "Fault Description")
         c9, c10 = st.columns(2)
@@ -235,18 +219,16 @@ with st.form("repair_form", clear_on_submit=False):
         placeholder="請描述故障情境、頻率、是否伴隨其他異狀…",
         height=76,
     )
-
     st.markdown(HR, unsafe_allow_html=True)
 
-    # 區段 4：服務設定
+    # ④ 服務設定
     section("4", "服務設定", "Service Configuration")
     c11, c12 = st.columns(2)
     with c11: priority = st.selectbox("優先等級", PRIORITIES)
     with c12: note     = st.text_input("備註", placeholder="其他說明事項")
-
     st.markdown(HR, unsafe_allow_html=True)
 
-    # 區段 5：故障照片
+    # ⑤ 故障照片
     section("5", "故障照片（選填）", "Fault Photos — max 8 files, 15 MB each")
     st.markdown("""
     <div style="font-size:12px;color:var(--muted);margin-bottom:6px">
@@ -270,7 +252,7 @@ with st.form("repair_form", clear_on_submit=False):
     st.markdown("<br>", unsafe_allow_html=True)
     cl, cm, cr = st.columns([1, 2, 1])
     with cm:
-        label = "🚀　建立維修案件" if not is_batch_mode else "🚀　批次建立維修案件"
+        label = "🚀　建立維修主單" if not is_batch_mode else "🚀　批次建立維修主單"
         submitted = st.form_submit_button(label, use_container_width=True, type="primary")
 
 
@@ -295,25 +277,26 @@ if submitted:
         for e in errors: st.error(f"⚠️  {e}")
         if errors: st.stop()
 
-        data = {**shared, "motor_sn": motor_sn.strip(), "model": model, "qty": qty}
+        motors_list = [{"motor_sn": motor_sn.strip(), "model": model,
+                        "fault_type": fault_type}]
+        master_data = {**shared, "qty": 1}
+
         with st.spinner("寫入 Google Sheet 中..."):
             try:
-                rma_id = append_case(data)
-                notify_new_rma(rma_id, data)
+                master_id  = append_master(master_data)
+                detail_ids = [append_detail(master_id, 1, {**shared,
+                                "motor_sn": motor_sn.strip(), "model": model})]
+                notify_new_rma(master_id, {**shared,
+                    "motor_sn": motor_sn.strip(), "model": model})
             except Exception as ex:
                 st.error(f"❌ 寫入失敗：{ex}")
                 st.stop()
 
-        photo_urls = []
         if uploaded_photos:
             with st.spinner(f"上傳 {len(uploaded_photos)} 張照片到 Google Drive..."):
-                photo_urls = upload_photos(uploaded_photos, rma_id)
+                photo_urls = upload_photos(uploaded_photos, master_id)
                 if photo_urls:
-                    update_photos(rma_id, photo_urls)
-
-        st.session_state["submitted_rma"]  = [rma_id]
-        st.session_state["submitted_info"] = {**data, "photo_count": len(photo_urls)}
-        st.rerun()
+                    update_detail_photos(detail_ids[0], photo_urls)
 
     else:
         valid_motors = []
@@ -331,12 +314,15 @@ if submitted:
         for e in errors: st.error(f"⚠️  {e}")
         if errors: st.stop()
 
-        with st.spinner(f"批次寫入 {len(valid_motors)} 顆馬達資料中..."):
+        master_data = {**shared, "qty": len(valid_motors)}
+
+        with st.spinner(f"批次建立主單 + {len(valid_motors)} 筆子件中..."):
             try:
-                rma_ids = append_batch_cases(shared, valid_motors)
+                master_id  = append_master(master_data)
+                detail_ids = append_batch_details(master_id, shared, valid_motors)
                 notify_new_rma(
-                    f"{rma_ids[0]} 等共 {len(rma_ids)} 件",
-                    {**shared, "motor_sn": f"批次 {len(rma_ids)} 顆",
+                    f"{master_id}（{len(detail_ids)} 顆馬達）",
+                    {**shared, "motor_sn": f"批次 {len(detail_ids)} 顆",
                      "model": valid_motors[0]["model"],
                      "fault_type": fault_type},
                 )
@@ -346,13 +332,18 @@ if submitted:
 
         if uploaded_photos:
             with st.spinner("上傳照片到 Google Drive..."):
-                photo_urls = upload_photos(uploaded_photos, rma_ids[0])
+                photo_urls = upload_photos(uploaded_photos, master_id)
                 if photo_urls:
-                    for rid in rma_ids:
-                        update_photos(rid, photo_urls)
+                    for did in detail_ids:
+                        update_detail_photos(did, photo_urls)
 
+        motors_list = valid_motors
         if "batch_motors" in st.session_state:
             del st.session_state["batch_motors"]
-        st.session_state["submitted_rma"]  = rma_ids
-        st.session_state["submitted_info"] = {**shared, "motors": valid_motors}
-        st.rerun()
+
+    st.session_state["submitted_rma"]        = master_id
+    st.session_state["submitted_detail_ids"] = detail_ids
+    st.session_state["submitted_info"] = {
+        **shared, "motors": motors_list,
+    }
+    st.rerun()

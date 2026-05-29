@@ -6,8 +6,9 @@ import io
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timedelta
-from utils.rma_gsheet import load_all_cases
-from utils.style      import QMS_CSS, topbar, page_header, STATUS_EMOJI, status_badge, gsheet_error_banner
+from utils.rma_detail_gsheet import load_all_details
+from utils.rma_master_gsheet import load_all_masters
+from utils.style             import QMS_CSS, topbar, page_header, STATUS_EMOJI, status_badge, gsheet_error_banner
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 維修歷史",
@@ -63,7 +64,25 @@ def calc_tat(row) -> str:
 
 @st.cache_data(ttl=30, show_spinner="載入歷史資料...")
 def get_data():
-    return load_all_cases()
+    details = load_all_details()
+    masters = load_all_masters()
+    if details.empty:
+        return details
+    if not masters.empty:
+        # 從主單補入客戶資訊（join on 主單編號）
+        master_slim = masters[["主單編號","客戶公司","聯絡人","聯絡電話","客戶Email",
+                                "收件日期","維修類型","優先等級"]].copy()
+        master_slim.columns = ["主單編號","客戶公司","聯絡人","聯絡電話","客戶Email",
+                               "收件日期","維修類型","優先等級"]
+        merged = details.merge(master_slim, on="主單編號", how="left",
+                               suffixes=("","_master"))
+        # 優先用主單欄位填充子件缺少的欄位
+        for col in ["客戶公司","聯絡人","聯絡電話","客戶Email","收件日期","維修類型","優先等級"]:
+            if col not in merged.columns:
+                merged[col] = ""
+            merged[col] = merged[col].fillna(merged.get(col+"_master",""))
+        return merged
+    return details
 
 
 col_ref, col_btn = st.columns([10, 1])
@@ -131,11 +150,14 @@ with ff:
 view = df.copy()
 
 if kw:
+    id_col = "子件編號" if "子件編號" in view.columns else "RMA編號"
+    sn_col = "馬達序號" if "馬達序號" in view.columns else "馬達序號"
     m = (
-        view["RMA編號"].astype(str).str.contains(kw, case=False, na=False) |
-        view["馬達序號"].astype(str).str.contains(kw, case=False, na=False) |
-        view["客戶公司"].astype(str).str.contains(kw, case=False, na=False) |
-        view["聯絡人"].astype(str).str.contains(kw, case=False, na=False)
+        view.get("主單編號",pd.Series(dtype=str)).astype(str).str.contains(kw,case=False,na=False) |
+        view[id_col].astype(str).str.contains(kw, case=False, na=False) |
+        view.get(sn_col,pd.Series(dtype=str)).astype(str).str.contains(kw,case=False,na=False) |
+        view.get("客戶公司",pd.Series(dtype=str)).astype(str).str.contains(kw,case=False,na=False) |
+        view.get("聯絡人",pd.Series(dtype=str)).astype(str).str.contains(kw,case=False,na=False)
     )
     view = view[m]
 
@@ -185,7 +207,8 @@ if view.empty:
     st.warning("沒有符合條件的案件。")
     st.stop()
 
-show_cols = ["RMA編號","馬達序號","產品型號","故障類別","客戶公司",
+id_col = "子件編號" if "子件編號" in view.columns else "RMA編號"
+show_cols = [id_col,"主單編號","馬達序號","產品型號","故障類別","客戶公司",
              "收件日期","維修狀態","優先等級","維修類型"]
 show_cols = [c for c in show_cols if c in view.columns]
 disp = view[show_cols].copy()
@@ -199,15 +222,16 @@ st.dataframe(
     use_container_width=True,
     height=min(460, 56 + len(disp) * 38),
     column_config={
-        "RMA編號":  st.column_config.TextColumn("RMA 編號",  width=150),
-        "馬達序號": st.column_config.TextColumn("S/N",       width=100),
-        "產品型號": st.column_config.TextColumn("型號",       width=160),
-        "故障類別": st.column_config.TextColumn("故障",       width=100),
-        "客戶公司": st.column_config.TextColumn("客戶",       width=130),
-        "收件日期": st.column_config.TextColumn("收件日期",   width=140),
-        "維修狀態": st.column_config.TextColumn("狀態",       width=130),
-        "優先等級": st.column_config.TextColumn("優先",       width=70),
-        "維修類型": st.column_config.TextColumn("維修類型",   width=130),
+        id_col:     st.column_config.TextColumn("子件編號",   width=160),
+        "主單編號": st.column_config.TextColumn("主單",       width=150),
+        "馬達序號": st.column_config.TextColumn("S/N",        width=100),
+        "產品型號": st.column_config.TextColumn("型號",        width=150),
+        "故障類別": st.column_config.TextColumn("故障",        width=100),
+        "客戶公司": st.column_config.TextColumn("客戶",        width=130),
+        "收件日期": st.column_config.TextColumn("收件日期",    width=140),
+        "維修狀態": st.column_config.TextColumn("狀態",        width=130),
+        "優先等級": st.column_config.TextColumn("優先",        width=70),
+        "維修類型": st.column_config.TextColumn("維修類型",    width=130),
     },
     hide_index=True,
 )
@@ -223,11 +247,12 @@ st.markdown("""
   </div>
 </div>""", unsafe_allow_html=True)
 
-rma_list = view["RMA編號"].dropna().tolist()
-sel_rma  = st.selectbox("選擇 RMA 查看詳情", rma_list, label_visibility="collapsed")
+_id_col  = "子件編號" if "子件編號" in view.columns else "RMA編號"
+rma_list = view[_id_col].dropna().tolist()
+sel_rma  = st.selectbox("選擇子件查看詳情", rma_list, label_visibility="collapsed")
 
 if sel_rma:
-    r = view[view["RMA編號"] == sel_rma].iloc[0]
+    r = view[view[_id_col] == sel_rma].iloc[0]
     d1, d2, d3 = st.columns(3)
 
     with d1:

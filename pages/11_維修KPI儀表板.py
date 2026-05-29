@@ -6,8 +6,8 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
-from utils.rma_gsheet import load_all_cases
-from utils.style      import QMS_CSS, topbar, page_header, gsheet_error_banner
+from utils.rma_detail_gsheet import load_all_details
+from utils.style             import QMS_CSS, topbar, page_header, gsheet_error_banner
 
 st.set_page_config(
     page_title="REXONTEC 力科 | KPI 儀表板",
@@ -80,11 +80,11 @@ PURPLE = "#7b1fa2"; TEAL   = "#00897b"
 
 STATUS_COLORS = {
     "待收件":"#f0a500","已收件":"#1e88e5","初診中":"#1e88e5",
-    "等待零件":"#e67e22","維修中":"#f57f17",
-    "待QC":"#7b1fa2","已出廠":"#27ae60","報廢通知":"#c0392b",
+    "待檢測":"#e67e22","待零件":"#e67e22","維修中":"#f57f17",
+    "待QC":"#7b1fa2","已完成":"#27ae60","已出廠":"#27ae60","已取消":"#c0392b",
 }
 PRIORITY_DAYS = {"P1":2,"P2":5,"P3":7,"P4":14}
-DONE_STATUS   = {"已出廠","報廢通知"}
+DONE_STATUS   = {"已完成","已出廠","已取消"}
 FAULT_ALL     = ["運轉異音","過熱","轉速不穩","完全不轉",
                  "震動異常","電流異常","外殼損傷","線材問題","其他"]
 
@@ -106,7 +106,7 @@ def base_layout(**kw):
 
 @st.cache_data(ttl=30, show_spinner="載入 KPI 資料...")
 def get_data():
-    return load_all_cases()
+    return load_all_details()
 
 
 _, col_btn = st.columns([10, 1])
@@ -138,14 +138,16 @@ def calc_overdue(row):
         return 0
 
 if not df.empty:
-    df["_month"]   = df["收件日期"].apply(parse_month)
-    df["_overdue"] = df.apply(calc_overdue, axis=1)
-    df["_pri"]     = df["優先等級"].astype(str).str[:2]
+    # 子件用「主單收件日期」不存在時退回子件本身無日期欄；KPI 改用主單日期
+    # 子件沒有獨立收件日期，以建立時用的「主單編號」對應主單 → 這裡直接用空 month
+    df["_month"]   = df.get("收件日期", pd.Series(dtype=str)).apply(parse_month) if "收件日期" in df.columns else None
+    df["_overdue"] = 0   # 子件不計算逾期（主單層級），KPI 只統計數量
+    df["_pri"]     = "P3"
 
 total   = len(df) if not df.empty else 0
-active  = df[~df["維修狀態"].isin(DONE_STATUS)]  if not df.empty else pd.DataFrame()
-done_df = df[df["維修狀態"] == "已出廠"]          if not df.empty else pd.DataFrame()
-overdue = active[active["_overdue"] > 0]           if not active.empty else pd.DataFrame()
+active  = df[~df["維修狀態"].isin(DONE_STATUS)]        if not df.empty else pd.DataFrame()
+done_df = df[df["維修狀態"].isin({"已出廠","已完成"})] if not df.empty else pd.DataFrame()
+overdue = pd.DataFrame()
 pct     = f"{int(len(done_df)/total*100)}%" if total else "—"
 
 # ── KPI 統計卡 ───────────────────────────────

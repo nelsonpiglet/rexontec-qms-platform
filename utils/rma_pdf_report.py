@@ -513,3 +513,207 @@ def generate_repair_pdf(row: dict) -> bytes:
     )
 
     return bytes(pdf.output())
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 批次 PDF：主單封面 + 每顆馬達獨立頁
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_batch_repair_pdf(master: dict, details: list) -> bytes:
+    """
+    生成批次維修報告。
+    master  : 主單 dict（含客戶資訊）
+    details : 子件 dict 清單（每顆馬達一筆）
+    """
+    pdf = RepairPDF()
+    pdf._rma_id = str(master.get("主單編號", ""))
+
+    # ── 封面頁 ──────────────────────────────────────────────────────────────
+    pdf.add_page()
+    mid     = str(master.get("主單編號", ""))
+    now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+    recv    = str(master.get("收件日期", ""))[:16]
+
+    # 大標頭
+    pdf.set_fill_color(*C_NAVY)
+    pdf.rect(MARGIN, MARGIN, CONTENT_W, 32, style="F")
+    pdf.set_fill_color(*C_ORANGE)
+    pdf.rect(MARGIN, MARGIN, 4, 32, style="F")
+
+    pdf.set_xy(MARGIN + 7, MARGIN + 2)
+    pdf.set_font("B", size=15)
+    pdf.set_text_color(*C_ORANGE)
+    pdf.cell(90, 9, "REXONTEC 力科", ln=False)
+
+    pdf.set_xy(MARGIN + 7, MARGIN + 11)
+    pdf.set_font("R", size=9)
+    pdf.set_text_color(180, 200, 220)
+    pdf.cell(90, 5, "馬達返廠維修保養系統  Motor Repair System", ln=False)
+
+    pdf.set_xy(MARGIN + CONTENT_W - 80, MARGIN + 2)
+    pdf.set_font("B", size=15)
+    pdf.set_text_color(*C_WHITE)
+    pdf.cell(78, 9, "批次維修報告", align="R", ln=False)
+    pdf.set_xy(MARGIN + CONTENT_W - 80, MARGIN + 11)
+    pdf.set_font("R", size=9)
+    pdf.set_text_color(180, 200, 220)
+    pdf.cell(78, 5, "BATCH REPAIR REPORT", align="R", ln=False)
+
+    pdf.set_xy(MARGIN + 7, MARGIN + 20)
+    pdf.set_font("B", size=12)
+    pdf.set_text_color(*C_YELLOW)
+    pdf.cell(0, 8, mid, ln=False)
+
+    pdf.set_y(MARGIN + 36)
+    pdf.set_text_color(*C_TEXT)
+    pdf.hline(lw=0.5, color=C_NAVY)
+    pdf.ln(4)
+
+    pdf.data_row([("收件日期", recv), ("報告產生", now_str)], alt=True)
+    pdf.data_row([("馬達總數", f"{len(details)} 顆"), ("優先等級", master.get("優先等級",""))], alt=False)
+    pdf.ln(4)
+
+    # 客戶資訊
+    pdf.section_title("一", "客戶資訊", "Customer Information")
+    pdf.data_row([("客戶公司", master.get("客戶公司","")), ("聯絡人", master.get("聯絡人",""))], alt=True)
+    pdf.data_row([("聯絡電話", master.get("聯絡電話","")), ("Email", master.get("客戶Email",""))], alt=False)
+    pdf.ln(4)
+
+    # 摘要清單
+    pdf.section_title("二", "馬達清單摘要", "Motor Summary")
+    # 表頭
+    col_w = [14, 32, 42, 34, 38, 18]
+    headers_row = ["序", "子件編號", "S/N", "型號", "故障類別", "狀態"]
+    pdf.set_fill_color(*C_NAVY)
+    pdf.set_text_color(*C_WHITE)
+    y0 = pdf.get_y()
+    pdf.rect(MARGIN, y0, CONTENT_W, 7, style="F")
+    x = MARGIN
+    for w, h in zip(col_w, headers_row):
+        pdf.set_xy(x + 1, y0 + 0.8)
+        pdf.set_font("B", size=8)
+        pdf.cell(w - 2, 5.5, h, align="C")
+        x += w
+    pdf.set_y(y0 + 7)
+    pdf.set_text_color(*C_TEXT)
+
+    for i, det in enumerate(details):
+        alt = (i % 2 == 1)
+        pdf.set_fill_color(*(C_LGRAY if alt else C_WHITE))
+        y1 = pdf.get_y()
+        pdf.rect(MARGIN, y1, CONTENT_W, 7, style="F")
+        pdf.hline(y1, lw=0.15)
+        x = MARGIN
+        cells = [
+            str(i + 1),
+            str(det.get("子件編號", ""))[-8:],
+            str(det.get("馬達序號", "")),
+            str(det.get("產品型號", ""))[:14],
+            str(det.get("故障類別", "")),
+            str(det.get("維修狀態", ""))[:5],
+        ]
+        for w, txt in zip(col_w, cells):
+            pdf.set_xy(x + 1, y1 + 1)
+            pdf.set_font("R", size=8)
+            pdf.cell(w - 2, 5, txt, align="L")
+            x += w
+        pdf.set_y(y1 + 7)
+
+        if pdf.get_y() > PAGE_H - 22 - 20:
+            pdf.add_page()
+
+    pdf.ln(4)
+
+    # ── 每顆馬達獨立檢測頁 ──────────────────────────────────────────────────
+    for i, det in enumerate(details):
+        if pdf.get_y() > PAGE_H - 22 - 80:
+            pdf.add_page()
+        else:
+            pdf.ln(6)
+            pdf.hline(lw=0.4, color=C_NAVY)
+            pdf.ln(4)
+
+        seq_label = f"馬達 {i+1}/{len(details)}"
+        sn_label  = str(det.get("馬達序號", ""))
+        did_label = str(det.get("子件編號", ""))
+
+        # 子件標題列
+        pdf.set_fill_color(*C_BLUE)
+        pdf.set_text_color(*C_WHITE)
+        y_hd = pdf.get_y()
+        pdf.rect(MARGIN, y_hd, CONTENT_W, 8, style="F")
+        pdf.set_xy(MARGIN + 3, y_hd + 1.2)
+        pdf.set_font("B", size=10)
+        pdf.cell(70, 6, f"{seq_label}  {did_label}", ln=False)
+        pdf.set_xy(MARGIN + CONTENT_W - 75, y_hd + 1.2)
+        pdf.set_font("R", size=9)
+        pdf.cell(73, 6, f"S/N: {sn_label}  |  {det.get('產品型號','')}", align="R", ln=False)
+        pdf.set_y(y_hd + 10)
+        pdf.set_text_color(*C_TEXT)
+
+        pdf.data_row([("故障類別", det.get("故障類別","")),
+                      ("維修狀態", det.get("維修狀態",""))], alt=True)
+        pdf.data_row([("曾撞擊/墜機", det.get("是否曾撞擊/墜機","否")),
+                      ("技術判定",   det.get("技術判定",""))], alt=False)
+
+        # 技術檢測（有資料才顯示）
+        _has = any(str(det.get(k,"")).strip() for k in [
+            "S1-外殼撞傷","S2-異音","S3-AB阻值","S4-高震動","S5-線圈燒毀","最終判定"])
+        if _has:
+            pdf.section_title("", "技術檢測", "")
+            pdf.detect_row(
+                "Step1 外觀",
+                [("外殼撞傷", det.get("S1-外殼撞傷","否")),
+                 ("軸心歪斜", det.get("S1-軸心歪斜","否")),
+                 ("沙土侵入", det.get("S1-沙土侵入","否")),
+                 ("螺絲裂痕", det.get("S1-螺絲裂痕","否"))],
+                alt=True)
+            pdf.detect_row(
+                "Step2 手感",
+                [("異音",     det.get("S2-異音","否")),
+                 ("卡頓",     det.get("S2-卡頓","否")),
+                 ("軸承鬆動", det.get("S2-軸承鬆動","否"))],
+                alt=False)
+            try:
+                _ab = float(det.get("S3-AB阻值",0) or 0)
+                _bc = float(det.get("S3-BC阻值",0) or 0)
+                _ca = float(det.get("S3-CA阻值",0) or 0)
+            except Exception:
+                _ab = _bc = _ca = 0.0
+            pdf.detect_resistance_row(_ab, _bc, _ca, str(det.get("S3-線圈異常","否"))=="是", alt=True)
+            pdf.detect_row(
+                "Step4 通電",
+                [("高震動",   det.get("S4-高震動","否")),
+                 ("高溫",     det.get("S4-高溫","否")),
+                 ("無法啟動", det.get("S4-無法啟動","否"))],
+                alt=False)
+            pdf.detect_row(
+                "Step5 拆解",
+                [("線圈燒毀", det.get("S5-線圈燒毀","否")),
+                 ("磁鐵脫落", det.get("S5-磁鐵脫落","否")),
+                 ("生鏽",     det.get("S5-生鏽","否"))],
+                alt=True)
+            pdf.data_row([("最終判定", det.get("最終判定","")),
+                          ("保固判定", det.get("保固判定",""))], alt=False)
+            pdf.data_row([("維修方式", det.get("維修方式","")),
+                          ("是否報廢", det.get("是否報廢",""))], alt=True)
+            if det.get("維修成本評估",""):
+                pdf.data_row([("維修成本評估", det.get("維修成本評估","")), ("","")], alt=False)
+
+    # ── 簽核 ────────────────────────────────────────────────────────────────
+    if pdf.get_y() > PAGE_H - 22 - 50:
+        pdf.add_page()
+    pdf.ln(4)
+    pdf.section_title("三", "簽核確認", "Approval")
+    pdf.ln(2)
+    pdf.sign_row(["業務確認", "維修技術員", "工程主管"])
+    pdf.ln(3)
+    pdf.hline(lw=0.3)
+    pdf.ln(2)
+    pdf.set_font("R", size=7.5)
+    pdf.set_text_color(*C_MUTED)
+    pdf.multi_cell(CONTENT_W, 4.5,
+                   "本報告由 REXONTEC 力科馬達返廠維修保養系統自動產生，僅供內部使用。",
+                   align="C")
+
+    return bytes(pdf.output())
