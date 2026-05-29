@@ -432,7 +432,7 @@ det_rma = st.selectbox(
         + str(sub_df[sub_df["子件編號"]==d]["產品型號"].values[0]
                if not sub_df[sub_df["子件編號"]==d].empty else "")
     ),
-    key="det_rma_sel", label_visibility="collapsed",
+    key=f"det_rma_sel_{sel_master}", label_visibility="collapsed",
 )
 
 det_df = sub_df[sub_df["子件編號"] == det_rma]

@@ -382,14 +382,16 @@ def generate_repair_pdf(row: dict) -> bytes:
             [("外殼撞傷", row.get("S1-外殼撞傷","否")),
              ("軸心歪斜", row.get("S1-軸心歪斜","否")),
              ("沙土侵入", row.get("S1-沙土侵入","否")),
-             ("螺絲裂痕", row.get("S1-螺絲裂痕","否"))],
+             ("螺絲裂痕", row.get("S1-螺絲裂痕","否")),
+             ("正常",     row.get("S1-正常","否"))],
             alt=True,
         )
         pdf.detect_row(
             "Step2 手感測試",
             [("異音",     row.get("S2-異音","否")),
              ("卡頓",     row.get("S2-卡頓","否")),
-             ("軸承鬆動", row.get("S2-軸承鬆動","否"))],
+             ("軸承鬆動", row.get("S2-軸承鬆動","否")),
+             ("正常",     row.get("S2-正常","否"))],
             alt=False,
         )
         try:
@@ -405,14 +407,16 @@ def generate_repair_pdf(row: dict) -> bytes:
             "Step4 通電測試",
             [("高震動",   row.get("S4-高震動","否")),
              ("高溫",     row.get("S4-高溫","否")),
-             ("無法啟動", row.get("S4-無法啟動","否"))],
+             ("無法啟動", row.get("S4-無法啟動","否")),
+             ("正常",     row.get("S4-正常","否"))],
             alt=False,
         )
         pdf.detect_row(
             "Step5 拆解分析",
             [("線圈燒毀", row.get("S5-線圈燒毀","否")),
              ("磁鐵脫落", row.get("S5-磁鐵脫落","否")),
-             ("生鏽",     row.get("S5-生鏽","否"))],
+             ("生鏽",     row.get("S5-生鏽","否")),
+             ("正常",     row.get("S5-正常","否"))],
             alt=True,
         )
         pdf.data_row([("最終判定", row.get("最終判定","")),
@@ -666,13 +670,15 @@ def generate_batch_repair_pdf(master: dict, details: list) -> bytes:
                 [("外殼撞傷", det.get("S1-外殼撞傷","否")),
                  ("軸心歪斜", det.get("S1-軸心歪斜","否")),
                  ("沙土侵入", det.get("S1-沙土侵入","否")),
-                 ("螺絲裂痕", det.get("S1-螺絲裂痕","否"))],
+                 ("螺絲裂痕", det.get("S1-螺絲裂痕","否")),
+                 ("正常",     det.get("S1-正常","否"))],
                 alt=True)
             pdf.detect_row(
                 "Step2 手感",
                 [("異音",     det.get("S2-異音","否")),
                  ("卡頓",     det.get("S2-卡頓","否")),
-                 ("軸承鬆動", det.get("S2-軸承鬆動","否"))],
+                 ("軸承鬆動", det.get("S2-軸承鬆動","否")),
+                 ("正常",     det.get("S2-正常","否"))],
                 alt=False)
             try:
                 _ab = float(det.get("S3-AB阻值",0) or 0)
@@ -685,13 +691,15 @@ def generate_batch_repair_pdf(master: dict, details: list) -> bytes:
                 "Step4 通電",
                 [("高震動",   det.get("S4-高震動","否")),
                  ("高溫",     det.get("S4-高溫","否")),
-                 ("無法啟動", det.get("S4-無法啟動","否"))],
+                 ("無法啟動", det.get("S4-無法啟動","否")),
+                 ("正常",     det.get("S4-正常","否"))],
                 alt=False)
             pdf.detect_row(
                 "Step5 拆解",
                 [("線圈燒毀", det.get("S5-線圈燒毀","否")),
                  ("磁鐵脫落", det.get("S5-磁鐵脫落","否")),
-                 ("生鏽",     det.get("S5-生鏽","否"))],
+                 ("生鏽",     det.get("S5-生鏽","否")),
+                 ("正常",     det.get("S5-正常","否"))],
                 alt=True)
             pdf.data_row([("最終判定", det.get("最終判定","")),
                           ("保固判定", det.get("保固判定",""))], alt=False)
