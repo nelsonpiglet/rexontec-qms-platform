@@ -33,20 +33,56 @@ STATUS_EMOJI_TEXT = {
     "待QC":"[待QC]","已出廠":"[已出廠]","報廢通知":"[報廢通知]",
 }
 
-FONT_REG  = "C:/Windows/Fonts/msjh.ttc"
-FONT_BOLD = "C:/Windows/Fonts/msjhbd.ttc"
 PAGE_W    = 210
 PAGE_H    = 297
 MARGIN    = 16
 CONTENT_W = PAGE_W - MARGIN * 2
+
+# ── 跨平台字型搜尋 ─────────────────────────────────────────────────
+_HERE_RMA = os.path.dirname(os.path.abspath(__file__))   # utils/
+_PROJ_RMA = os.path.dirname(_HERE_RMA)                   # 專案根目錄
+
+def _find_font_path() -> str:
+    """
+    搜尋可用中文字型路徑（優先順序）：
+      1. 專案 fonts/ 目錄（跨平台保證）
+      2. Windows 系統字型
+      3. Linux / Streamlit Cloud 系統字型
+    """
+    candidates = [
+        # 1. 專案隨附（最高優先，Linux 與 Windows 皆可用）
+        os.path.join(_PROJ_RMA, "fonts", "NotoSansTC-Regular.ttf"),
+        os.path.join(_PROJ_RMA, "fonts", "NotoSansCJKtc-Regular.otf"),
+        # 2. Windows 系統字型
+        "C:/Windows/Fonts/NotoSansTC-Regular.ttf",
+        "C:/Windows/Fonts/msjh.ttc",
+        "C:/Windows/Fonts/kaiu.ttf",
+        "C:/Windows/Fonts/mingliu.ttc",
+        # 3. Linux / Streamlit Cloud（fonts-noto-cjk 套件）
+        "/usr/share/fonts/opentype/noto/NotoSansCJKtc-Regular.otf",
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttf",
+        "/usr/share/fonts/truetype/wqy/wqy-microhei.ttf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    return ""   # 完全找不到時回傳空字串，__init__ 會拋出明確錯誤
 
 
 class RepairPDF(FPDF):
 
     def __init__(self):
         super().__init__(orientation="P", unit="mm", format="A4")
-        self.add_font("R",  fname=FONT_REG)
-        self.add_font("B",  fname=FONT_BOLD)
+        _fp = _find_font_path()
+        if not _fp:
+            raise FileNotFoundError(
+                "找不到中文字型，請確認 fonts/NotoSansTC-Regular.ttf 存在於專案目錄"
+            )
+        self.add_font("R", fname=_fp)
+        self.add_font("B", fname=_fp)   # 同字型模擬粗體（無獨立 bold 變體亦可用）
         self.set_margins(MARGIN, MARGIN, MARGIN)
         self.set_auto_page_break(True, margin=22)
         self._rma_id = ""
