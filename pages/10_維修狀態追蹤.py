@@ -51,7 +51,7 @@ st.markdown(page_header("維修狀態追蹤", "Repair Status Tracking", "TRK"), 
 STATUS_LIST = ["待收件","已收件","初診中","待檢測","待零件","維修中","待QC","已完成","已出廠","已取消"]
 DONE_STATUS = {"已完成","已出廠","已取消"}
 TECH_JUDGMENT_LIST = [
-    "", "可維修", "保固內", "保固外", "人為撞擊",
+    "", "檢測正常", "可維修", "保固內", "保固外", "人為撞擊",
     "軸承損壞", "線圈燒毀", "磁鐵脫落", "待拆解分析",
     "無法維修", "建議報廢", "已報廢",
 ]
@@ -369,7 +369,7 @@ else:
                 b_status = st.selectbox("批次更新狀態（留空=不改）",
                                         ["（不更改）"] + STATUS_LIST, key="bs_s")
                 b_verdict = st.selectbox("批次技術判定（留空=不改）",
-                                         ["（不更改）"] + TECH_JUDGMENT_LIST[1:], key="bs_v")
+                                         ["（不更改）"] + [t for t in TECH_JUDGMENT_LIST if t], key="bs_v")
             with ba2:
                 b_warranty = st.selectbox("批次保固判定（留空=不改）",
                                           ["（不更改）"] + WARRANTY_OPTIONS[1:], key="bs_w")
@@ -623,19 +623,17 @@ if auto_msgs:
 st.markdown(STEP_STYLE.format(label="📋 最終結果"), unsafe_allow_html=True)
 fr1, fr2, fr3 = st.columns(3)
 with fr1:
-    final_verdict = st.text_input("最終判定", value=_s("最終判定"),
-                                  placeholder="例：軸承磨損、線圈燒毀…", key=f"fv_{det_rma}")
+    saved_tj = _s("技術判定")
+    tj_idx = TECH_JUDGMENT_LIST.index(saved_tj) if saved_tj in TECH_JUDGMENT_LIST else 0
+    if _is_early_scrap and not saved_tj:
+        tj_idx = TECH_JUDGMENT_LIST.index("建議報廢") if "建議報廢" in TECH_JUDGMENT_LIST else 0
+    tech_judg_det = st.selectbox("技術判定", TECH_JUDGMENT_LIST, index=tj_idx, key=f"tjd_{det_rma}")
     saved_w = _s("保固判定")
     w_idx   = WARRANTY_OPTIONS.index(saved_w) if saved_w in WARRANTY_OPTIONS else 0
     warranty_judg = st.selectbox("保固判定", WARRANTY_OPTIONS, index=w_idx, key=f"wj_{det_rma}")
 with fr2:
     repair_method = st.text_area("維修方式", value=_s("維修方式"),
                                   placeholder="例：更換軸承、重繞線圈…", height=80, key=f"rm_{det_rma}")
-    saved_tj = _s("技術判定")
-    tj_idx = TECH_JUDGMENT_LIST.index(saved_tj) if saved_tj in TECH_JUDGMENT_LIST else 0
-    if _is_early_scrap and not saved_tj:
-        tj_idx = TECH_JUDGMENT_LIST.index("建議報廢") if "建議報廢" in TECH_JUDGMENT_LIST else 0
-    tech_judg_det = st.selectbox("技術判定", TECH_JUDGMENT_LIST, index=tj_idx, key=f"tjd_{det_rma}")
 with fr3:
     _scrap_default = _b("是否報廢") or _is_early_scrap
     is_scrap = st.checkbox("是否報廢", value=_scrap_default, key=f"scrap_{det_rma}")
@@ -645,6 +643,7 @@ with fr3:
     is_repairable = st.selectbox("是否可維修", ir_opts, index=ir_idx, key=f"ir_{det_rma}")
     cost_eval = st.text_input("維修成本評估", value=_s("維修成本評估"),
                                placeholder="例：軸承更換約 NT$300…", key=f"ce_{det_rma}")
+final_verdict = ""  # 已移除最終判定輸入欄
 
 # ── 儲存 & PDF ──
 sv_col, pdf_col, _ = st.columns([2, 2, 3])
