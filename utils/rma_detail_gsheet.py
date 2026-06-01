@@ -32,18 +32,26 @@ def _client():
     return get_client()
 
 
+@st.cache_resource(show_spinner=False)
+def _open_ss():
+    """快取 Spreadsheet 物件，避免每次呼叫重新 fetch metadata。"""
+    from utils.rma_gsheet import get_client
+    return get_client().open_by_key(SPREADSHEET_ID)
+
+
 def get_detail_sheet():
-    ss     = _client().open_by_key(SPREADSHEET_ID)
-    titles = [ws.title for ws in ss.worksheets()]
-    need   = len(DETAIL_COLUMNS) + 5
-    if DETAIL_SHEET_NAME in titles:
+    import gspread
+    ss   = _open_ss()
+    need = len(DETAIL_COLUMNS) + 5
+    try:
         ws = ss.worksheet(DETAIL_SHEET_NAME)
         if ws.col_count < len(DETAIL_COLUMNS):
             ws.resize(cols=need)
         return ws
-    ws = ss.add_worksheet(title=DETAIL_SHEET_NAME, rows=5000, cols=need)
-    ws.insert_row(DETAIL_COLUMNS, 1)
-    return ws
+    except gspread.WorksheetNotFound:
+        ws = ss.add_worksheet(title=DETAIL_SHEET_NAME, rows=5000, cols=need)
+        ws.insert_row(DETAIL_COLUMNS, 1)
+        return ws
 
 
 def ensure_detail_headers(sheet):
@@ -230,6 +238,42 @@ def delete_detail(detail_id: str, hard: bool = False) -> bool:
     else:
         sheet.update_cell(row_num, DETAIL_COL["維修狀態"], "已取消")
     return True
+
+
+def multi_update_details(changes: dict) -> int:
+    """
+    多列各自不同欄位的批次更新。
+    changes = {detail_id: {col_name: value, ...}, ...}
+    只做 2 次讀取 + 1 次批次寫入，無論修改幾列。
+    """
+    import gspread.utils as gu
+    if not changes:
+        return 0
+    sheet   = get_detail_sheet()
+    headers = sheet.row_values(1)
+    col_map = {h.strip(): i + 1 for i, h in enumerate(headers) if h.strip()}
+
+    id_set      = set(changes.keys())
+    id_col_vals = sheet.col_values(DETAIL_COL["子件編號"])
+    row_map     = {val: i + 1 for i, val in enumerate(id_col_vals) if val in id_set}
+
+    all_updates = []
+    count = 0
+    for did, data in changes.items():
+        row_num = row_map.get(did)
+        if row_num is None:
+            continue
+        for col, val in data.items():
+            if col in col_map:
+                all_updates.append({
+                    "range":  gu.rowcol_to_a1(row_num, col_map[col]),
+                    "values": [[str(val)]],
+                })
+        count += 1
+
+    if all_updates:
+        sheet.batch_update(all_updates, value_input_option="USER_ENTERED")
+    return count
 
 
 def batch_update_details(detail_ids: list, data: dict) -> int:

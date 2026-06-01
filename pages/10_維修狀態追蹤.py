@@ -12,7 +12,8 @@ from utils.rma_master_gsheet  import (load_all_masters, update_master_status,
 from utils.rma_detail_gsheet  import (load_all_details, load_details_by_master,
                                        update_detail_status, update_detail_detection,
                                        update_detail_photos, get_detail_photos,
-                                       delete_detail, batch_update_details)
+                                       delete_detail, batch_update_details,
+                                       multi_update_details)
 from utils.rma_detection_db   import get_step_custom_items
 from utils.style               import (QMS_CSS, topbar, page_header, stat_cards,
                                         status_badge, STATUS_EMOJI, gsheet_error_banner)
@@ -323,28 +324,29 @@ else:
         if st.button("💾 儲存子件修改", type="primary", use_container_width=True,
                      key="save_sub_rows"):
             with st.spinner("批次寫入中..."):
-                updated = 0
+                # ① 先收集所有變更，不在迴圈內做 IO
+                all_changes   = {}
+                notify_closed = []
                 for _, row in edited_sub.iterrows():
                     did = row.get("子件編號","")
-                    if not did:
-                        continue
+                    if not did: continue
                     orig = sub_df[sub_df["子件編號"] == did]
-                    if orig.empty:
-                        continue
+                    if orig.empty: continue
                     orig = orig.iloc[0]
-                    # 找有沒有變更
-                    update_data = {}
-                    for col in ["維修狀態","技術判定","維修方式","維修成本評估","是否報廢"]:
-                        if col in row.index and str(row[col]) != str(orig.get(col,"")):
-                            update_data[col] = str(row[col])
-                    if update_data:
-                        batch_update_details([did], update_data)
-                        # 通知業務
-                        if "維修狀態" in update_data and update_data["維修狀態"] in {"已出廠","已完成"}:
-                            notify_case_closed(did, update_data["維修狀態"], {**orig.to_dict(), **update_data})
-                        updated += 1
+                    changes = {
+                        col: str(row[col])
+                        for col in ["維修狀態","技術判定","維修方式","維修成本評估","是否報廢"]
+                        if col in row.index and str(row[col]) != str(orig.get(col,""))
+                    }
+                    if changes:
+                        all_changes[did] = changes
+                        if changes.get("維修狀態","") in {"已出廠","已完成"}:
+                            notify_closed.append((did, changes["維修狀態"], orig.to_dict()))
+                # ② 單次批次寫入（2 reads + 1 batch write）
+                updated = multi_update_details(all_changes) if all_changes else 0
             if updated:
-                # 同步主單狀態
+                for did, ns, orig in notify_closed:
+                    notify_case_closed(did, ns, {**orig, **all_changes.get(did,{})})
                 fresh_sub = load_all_details()
                 fresh_sub = fresh_sub[fresh_sub["主單編號"] == sel_master]
                 sync_master_status(sel_master, fresh_sub)

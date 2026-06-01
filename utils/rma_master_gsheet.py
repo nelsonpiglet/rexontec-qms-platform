@@ -37,18 +37,26 @@ def _client():
     return get_client()
 
 
+@st.cache_resource(show_spinner=False)
+def _open_ss():
+    """快取 Spreadsheet 物件，避免每次呼叫重新 fetch metadata。"""
+    from utils.rma_gsheet import get_client
+    return get_client().open_by_key(SPREADSHEET_ID)
+
+
 def get_master_sheet():
-    ss     = _client().open_by_key(SPREADSHEET_ID)
-    titles = [ws.title for ws in ss.worksheets()]
-    need   = len(MASTER_COLUMNS) + 5
-    if MASTER_SHEET_NAME in titles:
+    import gspread
+    ss   = _open_ss()
+    need = len(MASTER_COLUMNS) + 5
+    try:
         ws = ss.worksheet(MASTER_SHEET_NAME)
         if ws.col_count < len(MASTER_COLUMNS):
             ws.resize(cols=need)
         return ws
-    ws = ss.add_worksheet(title=MASTER_SHEET_NAME, rows=2000, cols=need)
-    ws.insert_row(MASTER_COLUMNS, 1)
-    return ws
+    except gspread.WorksheetNotFound:
+        ws = ss.add_worksheet(title=MASTER_SHEET_NAME, rows=2000, cols=need)
+        ws.insert_row(MASTER_COLUMNS, 1)
+        return ws
 
 
 def ensure_master_headers(sheet):
