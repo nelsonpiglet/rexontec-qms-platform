@@ -289,23 +289,66 @@ def page_header(title: str, subtitle: str, watermark: str = "OQC") -> str:
 
 
 def gsheet_error_banner(err: Exception = None):
-    """Streamlit Cloud 上 Google Sheets 連線失敗時顯示的友善錯誤畫面"""
+    """Google Sheets 連線失敗時的友善錯誤畫面（含詳細診斷）。"""
     import streamlit as st
-    st.error("⚠️ Google Sheets 連線失敗，無法載入資料。")
-    st.markdown("""
+
+    # ── 偵測錯誤類型 ─────────────────────────────
+    http_code  = None
+    err_body   = ""
+    is_auth    = False
+    is_rate    = False
+
+    if err is not None:
+        try:
+            if hasattr(err, "response"):
+                http_code = getattr(err.response, "status_code", None)
+                try:
+                    err_body = err.response.json().get("error", {}).get("message", "")
+                except Exception:
+                    err_body = str(getattr(err.response, "text", ""))[:200]
+            if http_code in (401, 403) or "credentials" in str(err).lower():
+                is_auth = True
+            if http_code == 429 or "quota" in str(err).lower() or "rate" in str(err).lower():
+                is_rate = True
+        except Exception:
+            pass
+
+    # ── 主要錯誤訊息 ─────────────────────────────
+    if is_rate:
+        st.error("⚠️ Google Sheets API 請求頻率超限（429 Rate Limit），請稍後幾秒後按「🔄 重新整理」重試。")
+    elif is_auth:
+        st.error("⚠️ Google Sheets 認證失敗（401/403），請檢查 Secrets 設定。")
+    else:
+        st.error("⚠️ Google Sheets 連線失敗，無法載入資料。")
+
+    # ── 詳細資訊（展開） ─────────────────────────
+    with st.expander("🔍 查看詳細錯誤資訊（診斷用）", expanded=True):
+        cols = st.columns(2)
+        with cols[0]:
+            st.caption(f"錯誤類型：`{type(err).__name__}`")
+            if http_code:
+                st.caption(f"HTTP 狀態碼：`{http_code}`")
+        with cols[1]:
+            if err_body:
+                st.caption(f"API 回應：{err_body}")
+            elif err is not None:
+                msg = str(err)[:300]
+                st.caption(f"錯誤訊息：{msg}")
+
+    # ── Secrets 設定說明（只在認證失敗時展示） ────
+    if is_auth or (not is_rate and http_code is None):
+        st.markdown("""
 <div style="background:#fff8e1;border:1px solid #ffe082;border-radius:8px;
-            padding:16px 20px;margin:8px 0;font-size:13px;line-height:1.8">
-  <div style="font-weight:700;color:#e65100;margin-bottom:8px">🔧 Streamlit Cloud 設定方式</div>
-  <ol style="margin:0;padding-left:20px">
+            padding:14px 18px;margin:6px 0;font-size:13px;line-height:1.8">
+  <div style="font-weight:700;color:#e65100;margin-bottom:6px">🔧 Streamlit Cloud Secrets 設定方式</div>
+  <ol style="margin:0;padding-left:18px">
     <li>右下角 <b>Manage app</b> → <b>Settings</b> → <b>Secrets</b></li>
     <li>貼入 <code>[gcp_service_account]</code> 的完整 TOML 內容</li>
-    <li>確認 <code>private_key</code> 值用雙引號 <code>"..."</code>，換行符為 <code>\\n</code>（非真正換行）</li>
+    <li>確認 <code>private_key</code> 值用雙引號，換行符為 <code>\\n</code></li>
     <li>點 <b>Save</b> — App 自動重啟即可連線</li>
   </ol>
-</div>
-""", unsafe_allow_html=True)
-    if err is not None:
-        st.caption(f"錯誤類型：{type(err).__name__}")
+</div>""", unsafe_allow_html=True)
+
     st.stop()
 
 

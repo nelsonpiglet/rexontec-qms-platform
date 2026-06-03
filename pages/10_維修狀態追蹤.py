@@ -109,8 +109,19 @@ try:
     masters_df = get_masters()
     details_df = get_details()
 except Exception as _e:
-    gsheet_error_banner(_e)
-    st.stop()
+    # 429 Rate Limit → 等 3 秒後自動重試一次
+    import time
+    _code = getattr(getattr(_e, "response", None), "status_code", None)
+    if _code == 429:
+        time.sleep(3)
+        try:
+            st.cache_data.clear()
+            masters_df = get_masters()
+            details_df = get_details()
+        except Exception as _e2:
+            gsheet_error_banner(_e2)
+    else:
+        gsheet_error_banner(_e)
 
 if masters_df.empty:
     st.info("目前沒有任何維修主單，請先到「維修輸入」頁面建立主單。")
