@@ -31,12 +31,14 @@ STATUS_PRIORITY = {
 }
 
 
-def _client():
+def _client(fresh: bool = False):
     from utils.rma_gsheet import get_client
+    if fresh:
+        get_client.clear()
     return get_client()
 
 
-def get_master_sheet():
+def _open_master_sheet_once():
     ss     = _client().open_by_key(SPREADSHEET_ID)
     titles = [ws.title for ws in ss.worksheets()]
     need   = len(MASTER_COLUMNS) + 5
@@ -48,6 +50,21 @@ def get_master_sheet():
     ws = ss.add_worksheet(title=MASTER_SHEET_NAME, rows=2000, cols=need)
     ws.insert_row(MASTER_COLUMNS, 1)
     return ws
+
+
+def get_master_sheet():
+    """取得 master worksheet；失敗時自動清除連線快取並重試最多 2 次。"""
+    import time
+    last_err = None
+    for attempt in range(3):
+        try:
+            return _open_master_sheet_once()
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+                _client(fresh=True)
+    raise last_err
 
 
 def ensure_master_headers(sheet):

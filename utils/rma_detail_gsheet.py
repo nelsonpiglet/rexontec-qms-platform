@@ -26,14 +26,16 @@ DETAIL_COLUMNS = [
 DETAIL_COL = {col: i + 1 for i, col in enumerate(DETAIL_COLUMNS)}
 
 
-def _client():
+def _client(fresh: bool = False):
     from utils.rma_gsheet import get_client
+    if fresh:
+        get_client.clear()      # 清除快取，強制重建連線
     return get_client()
 
 
-def get_detail_sheet():
-    import gspread
-    ss   = _client().open_by_key(SPREADSHEET_ID)
+def _open_detail_sheet_once():
+    """單次嘗試取得 detail worksheet（不含重試）。"""
+    ss     = _client().open_by_key(SPREADSHEET_ID)
     titles = [ws.title for ws in ss.worksheets()]
     need   = len(DETAIL_COLUMNS) + 5
     if DETAIL_SHEET_NAME in titles:
@@ -44,6 +46,21 @@ def get_detail_sheet():
     ws = ss.add_worksheet(title=DETAIL_SHEET_NAME, rows=5000, cols=need)
     ws.insert_row(DETAIL_COLUMNS, 1)
     return ws
+
+
+def get_detail_sheet():
+    """取得 detail worksheet；失敗時自動清除連線快取並重試最多 2 次。"""
+    import time
+    last_err = None
+    for attempt in range(3):
+        try:
+            return _open_detail_sheet_once()
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                time.sleep(2 ** attempt)          # 0 s → 1 s → (done)
+                _client(fresh=True)               # 清除快取，下次重建
+    raise last_err
 
 
 def ensure_detail_headers(sheet):
