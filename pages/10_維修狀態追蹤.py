@@ -8,7 +8,8 @@ import re
 import urllib.request
 from datetime import datetime, timedelta
 from utils.rma_master_gsheet  import (load_all_masters, update_master_status,
-                                       sync_master_status, MASTER_DONE_STATUS)
+                                       sync_master_status, delete_master,
+                                       MASTER_DONE_STATUS)
 from utils.rma_detail_gsheet  import (load_all_details, load_details_by_master,
                                        update_detail_status, update_detail_detection,
                                        update_detail_photos, get_detail_photos,
@@ -792,45 +793,88 @@ st.markdown("""
 <div class="card" style="margin-top:8px;border-left:4px solid var(--cr)">
   <div class="card-header" style="background:#fff8f7">
     <div class="card-title" style="color:var(--cr)">
-      <span class="card-dot" style="background:var(--cr)"></span>刪除 / 取消子件
+      <span class="card-dot" style="background:var(--cr)"></span>刪除 / 取消
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
 
 with st.expander("⚠️ 展開刪除功能（請謹慎操作）", expanded=False):
-    del1, del2 = st.columns([3, 2])
-    with del1:
+    del_scope = st.radio("刪除範圍",
+                         ["🔩 單一子件", "📋 整份主單（含全部子件）"],
+                         horizontal=True, key="del_scope")
+
+    del_mode = st.radio("刪除模式",
+                        ["✅ 軟刪除（標記已取消，資料保留）",
+                         "🗑️ 硬刪除（永久移除，無法還原）"],
+                        horizontal=True, key="del_mode_det")
+    is_hard = "硬刪除" in del_mode
+
+    # ── 刪除單一子件 ──
+    if del_scope.startswith("🔩"):
         sel_del = st.selectbox("選擇要刪除的子件",
                                ["— 請選擇 —"] + det_options, key="del_det_sel")
-    with del2:
-        del_mode = st.radio("刪除模式",
-                            ["✅ 軟刪除（標記已取消）", "🗑️ 硬刪除（永久移除）"],
-                            key="del_mode_det")
 
-    if sel_del and sel_del != "— 請選擇 —":
-        is_hard     = "硬刪除" in del_mode
-        confirm_del = st.checkbox(
-            f"我確認要{'永久刪除' if is_hard else '取消'} **{sel_del}**",
-            key="del_det_confirm")
-        hard_ok = True
+        if sel_del and sel_del != "— 請選擇 —":
+            confirm_del = st.checkbox(
+                f"我確認要{'永久刪除' if is_hard else '取消'} **{sel_del}**",
+                key="del_det_confirm")
+            hard_ok = True
+            if is_hard:
+                ct = st.text_input(f"輸入子件編號「{sel_del}」以確認",
+                                   key="del_det_hard_txt", placeholder="輸入子件編號以解鎖")
+                hard_ok = ct.strip() == sel_del
+
+            if st.button(f"{'🗑️ 永久刪除' if is_hard else '✅ 標記取消'} {sel_del}",
+                         type="primary", disabled=not (confirm_del and hard_ok),
+                         key="del_det_btn"):
+                with st.spinner("執行刪除中..."):
+                    ok = delete_detail(sel_del, hard=is_hard)
+                if ok:
+                    fresh_sub = load_all_details()
+                    fresh_sub = fresh_sub[fresh_sub["主單編號"] == sel_master] \
+                                if not fresh_sub.empty else pd.DataFrame()
+                    sync_master_status(sel_master, fresh_sub)
+                    st.success(f"✅ {sel_del} 已{'永久刪除' if is_hard else '標記為已取消'}")
+                    st.cache_data.clear(); st.rerun()
+                else:
+                    st.error(f"❌ 找不到 {sel_del}，請重新整理後再試。")
+
+    # ── 刪除整份主單 ──
+    else:
+        sub_count = len(sub_df) if not sub_df.empty else 0
+        st.markdown(
+            f'<div style="background:#fff3f3;border:1px solid #ffd0d0;border-radius:6px;'
+            f'padding:10px 14px;font-size:12.5px;color:#555;margin:6px 0">'
+            f'<b>{sel_master}</b> &nbsp;｜&nbsp; '
+            f'客戶：{mr.get("客戶公司","")} &nbsp;｜&nbsp; '
+            f'子件數量：<b>{sub_count}</b> 顆</div>',
+            unsafe_allow_html=True)
+
         if is_hard:
-            ct = st.text_input(f"輸入子件編號「{sel_del}」以確認", key="del_det_hard_txt",
-                               placeholder="輸入子件編號以解鎖")
-            hard_ok = ct.strip() == sel_del
+            st.warning("⚠️ 硬刪除整份主單：主單列將永久移除。子件請以「子件硬刪除」另行處理，或先軟刪除後再手動清理 Google Sheet。")
 
-        del_btn = st.button(
-            f"{'🗑️ 永久刪除' if is_hard else '✅ 標記取消'} {sel_del}",
-            type="primary", disabled=not (confirm_del and hard_ok), key="del_det_btn")
+        confirm_master = st.checkbox(
+            f"我確認要{'永久刪除' if is_hard else '取消'} 整份主單 **{sel_master}**（含所有子件）",
+            key="del_master_confirm")
+        hard_ok_m = True
+        if is_hard:
+            ctm = st.text_input(f"輸入主單編號「{sel_master}」以確認硬刪除",
+                                key="del_master_hard_txt", placeholder="輸入主單編號以解鎖")
+            hard_ok_m = ctm.strip() == sel_master
 
-        if del_btn:
-            with st.spinner("執行刪除中..."):
-                ok = delete_detail(sel_del, hard=is_hard)
-            if ok:
-                # 同步主單狀態
-                fresh_sub = load_all_details()
-                fresh_sub = fresh_sub[fresh_sub["主單編號"] == sel_master] if not fresh_sub.empty else pd.DataFrame()
-                sync_master_status(sel_master, fresh_sub)
-                st.success(f"✅ {sel_del} 已{'永久刪除' if is_hard else '標記為已取消'}")
+        if st.button(f"{'🗑️ 永久刪除' if is_hard else '✅ 整份取消'} {sel_master}",
+                     type="primary", disabled=not (confirm_master and hard_ok_m),
+                     key="del_master_btn"):
+            with st.spinner("刪除整份主單中..."):
+                # 先取消/刪除所有子件
+                if not sub_df.empty:
+                    for did in sub_df["子件編號"].dropna().tolist():
+                        delete_detail(did, hard=is_hard)
+                # 再刪除主單
+                ok_m = delete_master(sel_master, hard=is_hard)
+            if ok_m:
+                action = "永久刪除" if is_hard else "整份標記為已取消"
+                st.success(f"✅ 主單 {sel_master}（含 {sub_count} 顆子件）已{action}")
                 st.cache_data.clear(); st.rerun()
             else:
-                st.error(f"❌ 找不到 {sel_del}，請重新整理後再試。")
+                st.error(f"❌ 操作失敗，請重新整理後再試。")

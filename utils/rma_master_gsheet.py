@@ -160,3 +160,20 @@ def sync_master_status(master_id: str, details_df) -> str:
         new = min(active, key=lambda s: STATUS_PRIORITY.get(s, 0)) if active else "維修中"
     update_master_status(master_id, new)
     return new
+
+
+def delete_master(master_id: str, hard: bool = False) -> bool:
+    """
+    刪除整份主單。
+    soft（hard=False）：主單標記「已取消」，所有子件也標記「已取消」。
+    hard（hard=True）：從 Google Sheet 永久刪除主單列（子件請另行硬刪除）。
+    """
+    sheet   = get_master_sheet()
+    row_num = _find_row(sheet, master_id)
+    if row_num == -1:
+        return False
+    if hard:
+        sheet.delete_rows(row_num)
+    else:
+        sheet.update_cell(row_num, MASTER_COL["整體狀態"], "已取消")
+    return True
