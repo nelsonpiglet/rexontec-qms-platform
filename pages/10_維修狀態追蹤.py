@@ -49,6 +49,11 @@ st.markdown(page_header("維修狀態追蹤", "Repair Status Tracking", "TRK"), 
 
 
 # ── 常數 ─────────────────────────────────────
+REPAIR_TYPES = [
+    "摔落損傷", "飛機迫降", "試飛摔落", "試轉卡頓",
+    "無載運轉異常", "飛測摔落", "飛測墜毀",
+    "上電燒毀", "試轉異常", "重落地損傷",
+]
 STATUS_LIST = ["待收件","已收件","初診中","待檢測","待零件","維修中","待QC","已完成","已出廠","已取消"]
 DONE_STATUS = {"已完成","已出廠","已取消"}
 TECH_JUDGMENT_LIST = [
@@ -305,7 +310,7 @@ else:
 
     # 可選擇列（用 data_editor + 勾選欄位）
     sub_edit = sub_df[[c for c in
-        ["子件編號","馬達序號","產品型號","故障類別","維修狀態","技術判定","維修方式","維修成本評估","是否報廢"]
+        ["子件編號","馬達序號","產品型號","故障類別","維修類型","維修狀態","技術判定","維修方式","維修成本評估","是否報廢"]
         if c in sub_df.columns]].copy()
     sub_edit.insert(0, "✅選取", False)
 
@@ -319,6 +324,7 @@ else:
             "馬達序號":    st.column_config.TextColumn("S/N",           width=100, disabled=True),
             "產品型號":    st.column_config.TextColumn("型號",           width=140, disabled=True),
             "故障類別":    st.column_config.TextColumn("故障",           width=100, disabled=True),
+            "維修類型":    st.column_config.SelectboxColumn("維修需求",   width=130, options=REPAIR_TYPES),
             "維修狀態":    st.column_config.SelectboxColumn("狀態",       width=120, options=STATUS_LIST),
             "技術判定":    st.column_config.SelectboxColumn("技術判定",   width=120, options=TECH_JUDGMENT_LIST),
             "維修方式":    st.column_config.TextColumn("維修方式",       width=130),
@@ -346,7 +352,7 @@ else:
                     orig = orig.iloc[0]
                     changes = {
                         col: str(row[col])
-                        for col in ["維修狀態","技術判定","維修方式","維修成本評估","是否報廢"]
+                        for col in ["維修類型","維修狀態","技術判定","維修方式","維修成本評估","是否報廢"]
                         if col in row.index and str(row[col]) != str(orig.get(col,""))
                     }
                     if changes:
@@ -379,6 +385,8 @@ else:
         with st.form("batch_apply_form"):
             ba1, ba2, ba3 = st.columns(3)
             with ba1:
+                b_repair_type = st.selectbox("批次維修需求（留空=不改）",
+                                              ["（不更改）"] + REPAIR_TYPES, key="bs_rt")
                 b_status = st.selectbox("批次更新狀態（留空=不改）",
                                         ["（不更改）"] + STATUS_LIST, key="bs_s")
                 b_verdict = st.selectbox("批次技術判定（留空=不改）",
@@ -398,6 +406,7 @@ else:
 
         if apply_batch:
             batch_data = {}
+            if b_repair_type != "（不更改）": batch_data["維修類型"]    = b_repair_type
             if b_status != "（不更改）":    batch_data["維修狀態"]    = b_status
             if b_verdict != "（不更改）":   batch_data["技術判定"]    = b_verdict
             if b_warranty != "（不更改）":  batch_data["保固判定"]    = b_warranty
