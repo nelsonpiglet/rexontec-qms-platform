@@ -134,8 +134,8 @@ with fc:
 
 fd, fe, ff = st.columns([2, 2, 2])
 with fd:
-    repair_opts = ["全部類型"] + REPAIR_TYPES
-    repair_f    = st.selectbox("維修類型", repair_opts, label_visibility="collapsed")
+    repair_opts = ["全部需求"] + REPAIR_TYPES
+    repair_f    = st.selectbox("維修需求", repair_opts, label_visibility="collapsed")
 with fe:
     prio_opts = ["全部等級","P1","P2","P3","P4"]
     prio_f    = st.selectbox("優先等級", prio_opts, label_visibility="collapsed")
@@ -167,7 +167,7 @@ if kw:
 
 if status_f:    view = view[view["維修狀態"].isin(status_f)]
 if model_f != "全部型號":   view = view[view["產品型號"] == model_f]
-if repair_f != "全部類型":  view = view[view["維修類型"] == repair_f]
+if repair_f != "全部需求":  view = view[view["維修類型"] == repair_f]
 if prio_f != "全部等級":    view = view[view["優先等級"].astype(str).str.startswith(prio_f)]
 if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
     d0, d1 = pd.Timestamp(date_range[0]), pd.Timestamp(date_range[1])
@@ -235,7 +235,7 @@ st.dataframe(
         "收件日期": st.column_config.TextColumn("收件日期",    width=140),
         "維修狀態": st.column_config.TextColumn("狀態",        width=130),
         "優先等級": st.column_config.TextColumn("優先",        width=70),
-        "維修類型": st.column_config.TextColumn("維修類型",    width=130),
+        "維修類型": st.column_config.TextColumn("維修需求",    width=130),
     },
     hide_index=True,
 )
@@ -310,7 +310,7 @@ if sel_rma:
             f'<div style="font-size:13px;font-weight:700;color:{pri_clr}">{pri_val}</div>',
             unsafe_allow_html=True,
         )
-        for label, key in [("維修類型","維修類型"),("收件日期","收件日期"),("故障類別","故障類別")]:
+        for label, key in [("維修需求","維修類型"),("收件日期","收件日期"),("故障類別","故障類別")]:
             val = r.get(key,"—") or "—"
             st.markdown(
                 f'<div style="font-size:11px;color:var(--muted);margin-top:8px">{label}</div>'
