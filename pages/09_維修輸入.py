@@ -174,20 +174,20 @@ with st.form("repair_form", clear_on_submit=False):
         st.markdown("""
         <div style="background:#e8f4fd;border:1px solid #90caf9;border-radius:6px;
                     padding:10px 14px;margin-bottom:10px;font-size:12.5px;color:#1a2332">
-          💡 <b>操作說明：</b>直接在下方表格填入每顆馬達的序號、型號及故障類別。
+          💡 <b>操作說明：</b>直接在下方表格填入每顆馬達的序號、型號及維修需求。
           按最後一列右側 <b>＋</b> 或拖曳最下角可新增列。
         </div>""", unsafe_allow_html=True)
 
         bd1, bd2, bd3 = st.columns(3)
-        with bd1: default_model = st.selectbox("預設型號（批次套用）", MOTOR_MODELS, key="dm")
-        with bd2: default_fault = st.selectbox("預設故障類別（批次套用）", FAULT_TYPES,  key="df")
-        with bd3: crash         = st.radio("曾撞擊/墜機？", ["否", "是"], horizontal=True, key="bc")
+        with bd1: default_model  = st.selectbox("預設型號（批次套用）", MOTOR_MODELS, key="dm")
+        with bd2: default_repair = st.selectbox("預設維修需求（批次套用）", REPAIR_TYPES, key="df")
+        with bd3: crash          = st.radio("曾撞擊/墜機？", ["否", "是"], horizontal=True, key="bc")
 
         if "batch_motors" not in st.session_state:
             st.session_state.batch_motors = pd.DataFrame({
                 "馬達序號 S/N *": [""] * 3,
                 "產品型號":       [default_model] * 3,
-                "故障類別":       [default_fault] * 3,
+                "維修需求":       [default_repair] * 3,
             })
 
         batch_df = st.data_editor(
@@ -198,7 +198,7 @@ with st.form("repair_form", clear_on_submit=False):
             column_config={
                 "馬達序號 S/N *": st.column_config.TextColumn("馬達序號 S/N *", width=160),
                 "產品型號":       st.column_config.SelectboxColumn("產品型號", options=MOTOR_MODELS, width=200),
-                "故障類別":       st.column_config.SelectboxColumn("故障類別", options=FAULT_TYPES, width=130),
+                "維修需求":       st.column_config.SelectboxColumn("維修需求",  options=REPAIR_TYPES, width=160),
             },
             hide_index=True,
             key="batch_editor",
@@ -213,14 +213,12 @@ with st.form("repair_form", clear_on_submit=False):
     # ③ 故障資訊
     if not is_batch_mode:
         section("3", "故障資訊", "Fault Description")
-        c9, c10 = st.columns(2)
-        with c9:  fault_type  = st.selectbox("故障類別 *", FAULT_TYPES)
-        with c10: repair_type = st.selectbox("維修需求 *", REPAIR_TYPES)
+        repair_type = st.selectbox("維修需求 *", REPAIR_TYPES)
+        fault_type  = repair_type          # 故障類別 = 維修需求
     else:
         section("3", "故障資訊（批次共用）", "Fault Description — Shared")
-        c9, c10 = st.columns(2)
-        with c9:  fault_type  = st.selectbox("主要故障類別", FAULT_TYPES)
-        with c10: repair_type = st.selectbox("維修需求 *", REPAIR_TYPES)
+        repair_type = st.selectbox("維修需求 *", REPAIR_TYPES)
+        fault_type  = repair_type          # 故障類別 = 維修需求
 
     fault_desc = st.text_area(
         "故障詳細描述（選填）",
@@ -314,7 +312,7 @@ if submitted:
                 valid_motors.append({
                     "motor_sn":   sn,
                     "model":      str(row.get("產品型號", model) or model),
-                    "fault_type": str(row.get("故障類別", fault_type) or fault_type),
+                    "fault_type": str(row.get("維修需求", fault_type) or fault_type),
                 })
 
         if not valid_motors:
