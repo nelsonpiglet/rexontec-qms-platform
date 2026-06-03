@@ -134,8 +134,11 @@ with fc:
 
 fd, fe, ff = st.columns([2, 2, 2])
 with fd:
-    repair_opts = ["全部需求"] + REPAIR_TYPES
-    repair_f    = st.selectbox("維修需求", repair_opts, label_visibility="collapsed")
+    # 動態加入資料中既有的舊值，確保舊資料也能被篩選
+    _rt_existing = [v for v in df["維修類型"].dropna().unique()
+                    if v and v not in REPAIR_TYPES] if "維修類型" in df.columns else []
+    repair_opts  = ["全部需求"] + REPAIR_TYPES + _rt_existing
+    repair_f     = st.selectbox("維修需求", repair_opts, label_visibility="collapsed")
 with fe:
     prio_opts = ["全部等級","P1","P2","P3","P4"]
     prio_f    = st.selectbox("優先等級", prio_opts, label_visibility="collapsed")

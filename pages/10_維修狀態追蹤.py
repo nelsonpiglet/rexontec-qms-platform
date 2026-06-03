@@ -321,6 +321,14 @@ else:
         if c in sub_df.columns]].copy()
     sub_edit.insert(0, "✅選取", False)
 
+    # 動態加入既有值（包含舊資料），確保 SelectboxColumn 能正確顯示
+    _existing_ft = [v for v in sub_df.get("故障類別", pd.Series(dtype=str)).dropna().unique()
+                    if v and v not in FAULT_TYPES]
+    _existing_rt = [v for v in sub_df.get("維修類型",  pd.Series(dtype=str)).dropna().unique()
+                    if v and v not in REPAIR_TYPES]
+    _fault_opts  = FAULT_TYPES  + _existing_ft
+    _repair_opts = REPAIR_TYPES + _existing_rt
+
     edited_sub = st.data_editor(
         sub_edit,
         use_container_width=True,
@@ -330,8 +338,8 @@ else:
             "子件編號":    st.column_config.TextColumn("子件編號",       width=170, disabled=True),
             "馬達序號":    st.column_config.TextColumn("S/N",           width=100, disabled=True),
             "產品型號":    st.column_config.TextColumn("型號",           width=140, disabled=True),
-            "故障類別":    st.column_config.SelectboxColumn("故障類別",    width=120, options=FAULT_TYPES),
-            "維修類型":    st.column_config.SelectboxColumn("維修需求",   width=130, options=REPAIR_TYPES),
+            "故障類別":    st.column_config.SelectboxColumn("故障類別",    width=120, options=_fault_opts),
+            "維修類型":    st.column_config.SelectboxColumn("維修需求",   width=130, options=_repair_opts),
             "維修狀態":    st.column_config.SelectboxColumn("狀態",       width=120, options=STATUS_LIST),
             "技術判定":    st.column_config.SelectboxColumn("技術判定",   width=120, options=TECH_JUDGMENT_LIST),
             "維修方式":    st.column_config.TextColumn("維修方式",       width=130),
