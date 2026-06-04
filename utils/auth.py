@@ -16,6 +16,7 @@ USERS_PATH = os.path.join(os.path.dirname(__file__), '..', 'config', 'users.json
 _cache_data: dict  = None
 _cache_ts:   float = 0.0
 _CACHE_TTL:  float = 30.0
+_startup_synced:   bool = False   # 啟動同步旗標（每個 server process 只跑一次）
 
 
 # ══════════════════════════════════════════════════
@@ -31,6 +32,45 @@ def _hash_pw(password: str, salt: str = None) -> tuple:
 # ══════════════════════════════════════════════════
 # 資料讀寫（GSheets 主儲存 + 本地 JSON 備援）
 # ══════════════════════════════════════════════════
+def _startup_sync():
+    """
+    每個 server process 啟動後執行一次。
+    把 config/users.json（git 版本）裡的帳號「合併」進 Google Sheets，
+    確保即使 GSheets 因 API 錯誤漏存，redeploy 後仍能從 git 版本恢復。
+    """
+    global _startup_synced
+    if _startup_synced:
+        return
+    _startup_synced = True
+    try:
+        with open(USERS_PATH, 'r', encoding='utf-8') as f:
+            local = json.load(f)
+        if not local.get("users"):
+            return
+        from utils.gsheet import get_config_json, set_config_json
+        gs = get_config_json("users") or {"users": []}
+        gs_names = {u["username"] for u in gs.get("users", [])}
+        added = False
+        for u in local["users"]:
+            if u["username"] not in gs_names:
+                gs.setdefault("users", []).append(u)
+                added = True
+        # 若本地 auto_login_admin 有設定而 GSheets 沒有，補上
+        if local.get("auto_login_admin") and not gs.get("auto_login_admin"):
+            gs["auto_login_admin"] = local["auto_login_admin"]
+            added = True
+        if added:
+            for _a in range(3):
+                try:
+                    set_config_json("users", gs)
+                    break
+                except Exception:
+                    if _a < 2:
+                        time.sleep(2 ** _a)
+    except Exception:
+        pass
+
+
 def _load() -> dict:
     """
     讀取使用者資料。
@@ -41,6 +81,7 @@ def _load() -> dict:
     若 GSheets 空但本地有資料 → 自動遷移至 GSheets。
     """
     global _cache_data, _cache_ts
+    _startup_sync()   # 確保本地帳號已同步至 GSheets
     now = time.time()
     if _cache_data is not None and (now - _cache_ts) < _CACHE_TTL:
         return _cache_data
