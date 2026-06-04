@@ -83,18 +83,23 @@ def _load() -> dict:
 def _dump(data: dict):
     """
     寫入使用者資料。
-    同時寫 GSheets（主要）與本地 JSON（備援）並清除快取。
+    同時寫 GSheets（主要，失敗時重試 3 次）與本地 JSON（備援）並清除快取。
     """
     global _cache_data, _cache_ts
     _cache_data = None   # 清除快取，強制下次重新讀取
     _cache_ts   = 0.0
 
-    # ── 主要：寫 Google Sheets ───────────────────
-    try:
-        from utils.gsheet import set_config_json
-        set_config_json("users", data)
-    except Exception:
-        pass
+    # ── 主要：寫 Google Sheets（含重試）─────────
+    _gs_ok = False
+    for _attempt in range(3):
+        try:
+            from utils.gsheet import set_config_json
+            set_config_json("users", data)
+            _gs_ok = True
+            break
+        except Exception:
+            if _attempt < 2:
+                time.sleep(2 ** _attempt)
 
     # ── 備援：也寫本地 JSON ──────────────────────
     try:
@@ -103,6 +108,8 @@ def _dump(data: dict):
             json.dump(data, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
+
+    return _gs_ok   # 讓呼叫方知道 GSheets 是否成功
 
 
 # ══════════════════════════════════════════════════
