@@ -55,9 +55,9 @@ def _startup_sync():
             if u["username"] not in gs_names:
                 gs.setdefault("users", []).append(u)
                 added = True
-        # 若本地 auto_login_admin 有設定而 GSheets 沒有，補上
-        if local.get("auto_login_admin") and not gs.get("auto_login_admin"):
-            gs["auto_login_admin"] = local["auto_login_admin"]
+        # 同步 auto_login_admin（以 git 版本為權威來源，含空字串）
+        if "auto_login_admin" in local and local.get("auto_login_admin") != gs.get("auto_login_admin"):
+            gs["auto_login_admin"] = local.get("auto_login_admin", "")
             added = True
         if added:
             for _a in range(3):
