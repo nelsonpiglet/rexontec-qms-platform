@@ -48,7 +48,12 @@ def _startup_sync():
         if not local.get("users"):
             return
         from utils.gsheet import get_config_json, set_config_json
-        gs = get_config_json("users") or {"users": []}
+        gs_raw = get_config_json("users")
+        # gs_raw is None = API 錯誤或 key 不存在；兩者都不能安全覆寫 GSheets
+        # 第一次啟動（key 不存在）由 _load() 的自動遷移邏輯負責
+        if gs_raw is None:
+            return
+        gs = gs_raw if gs_raw else {"users": []}
         gs_names = {u["username"] for u in gs.get("users", [])}
         added = False
         for u in local["users"]:
