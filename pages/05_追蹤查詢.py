@@ -304,8 +304,8 @@ with tab_oqc:
     if df_oqc.empty:
         st.info("ℹ️ 尚無 OQC 資料，請先完成至少一筆出廠檢驗並提交。")
     else:
-        oqc_t1, oqc_t2, oqc_t3, oqc_t4 = st.tabs(
-            ["📦 批號追蹤", "🔎 SN 序號追蹤", "📋 全部記錄", "✏️ 修改檢驗單"]
+        oqc_t1, oqc_t2, oqc_t3, oqc_t4, oqc_t5 = st.tabs(
+            ["📦 批號追蹤", "🔎 SN 序號追蹤", "📋 全部記錄", "✏️ 修改檢驗單", "🗑️ 刪除記錄"]
         )
 
         # ── OQC Tab1：批號 + 品號 + 出貨日期 + 機種 查詢 ───────
@@ -763,19 +763,20 @@ with tab_oqc:
                             else:
                                 st.error(f"❌ 找不到記錄 {sel_rec_id}，請重新整理後再試。")
 
-            # ── 刪除區塊 ──────────────────────────────────
-            st.markdown("---")
+        # ── OQC Tab5：刪除記錄 ────────────────────────────
+        with oqc_t5:
+            st.markdown("#### 🗑️ 刪除 OQC 檢驗單")
             st.markdown("""
 <div style="background:#fff0f0;border:1px solid #f5b7b1;border-left:4px solid #c0392b;
-            border-radius:8px;padding:10px 14px;margin-bottom:10px">
-  <span style="font-size:13px;font-weight:700;color:#c0392b">🗑️ 刪除 OQC 檢驗單</span>
-  <span style="font-size:11px;color:#888;margin-left:8px">刪除後無法還原，請謹慎操作</span>
+            border-radius:8px;padding:12px 16px;margin-bottom:14px">
+  <span style="font-size:13px;font-weight:700;color:#c0392b">⚠️ 注意：刪除後無法還原，請確認後再操作</span>
 </div>""", unsafe_allow_html=True)
 
-            if not rec_opts:
+            rec_opts_del = df_oqc["記錄編號"].dropna().tolist()
+            if not rec_opts_del:
                 st.info("尚無 OQC 記錄。")
             else:
-                # ── 篩選列（讓使用者先縮小範圍再勾選）──────
+                # ── 篩選列 ──────────────────────────────────
                 d1, d2, d3 = st.columns(3)
                 with d1:
                     del_model_opts = ["全部機種"] + sorted(
@@ -802,29 +803,27 @@ with tab_oqc:
                         del_pool["記錄編號"].astype(str).str.contains(del_kw.strip(), case=False, na=False)
                     ]
 
+                st.caption(f"共 {len(del_pool)} 筆記錄（勾選左欄 ☑ 選取要刪除的項目）")
+
                 if del_pool.empty:
                     st.warning("找不到符合條件的記錄。")
                 else:
-                    # 勾選表格
                     del_show = del_pool[[c for c in [
                         "記錄編號","建立時間","機種","料號","批號",
                         "序號範圍","抽驗數量","總判定","檢驗員",
                     ] if c in del_pool.columns]].copy()
                     if "建立時間" in del_show.columns:
                         del_show["建立時間"] = del_show["建立時間"].dt.strftime("%Y/%m/%d %H:%M")
-
                     del_show.insert(0, "勾選刪除", False)
 
                     edited = st.data_editor(
                         del_show,
                         use_container_width=True,
                         hide_index=True,
-                        height=min(480, 56 + len(del_show) * 38),
+                        height=min(520, 56 + len(del_show) * 38),
                         column_config={
-                            "勾選刪除": st.column_config.CheckboxColumn(
-                                "☑ 刪除", width=70, default=False
-                            ),
-                            "記錄編號": st.column_config.TextColumn("記錄編號", width=180),
+                            "勾選刪除": st.column_config.CheckboxColumn("☑ 選取", width=70, default=False),
+                            "記錄編號": st.column_config.TextColumn("記錄編號", width=190),
                             "建立時間": st.column_config.TextColumn("建立時間", width=140),
                             "機種":     st.column_config.TextColumn("機種",     width=130),
                             "料號":     st.column_config.TextColumn("料號",     width=120),
@@ -843,13 +842,13 @@ with tab_oqc:
                     if to_delete:
                         st.markdown(
                             f'<div style="background:#fdedec;border:1px solid #f5b7b1;'
-                            f'border-radius:6px;padding:8px 14px;font-size:12px;margin:6px 0">'
-                            f'已勾選 <b style="color:#c0392b">{len(to_delete)}</b> 筆：'
-                            f'{" ｜ ".join(to_delete)}</div>',
+                            f'border-radius:6px;padding:10px 14px;font-size:12px;margin:8px 0">'
+                            f'已選取 <b style="color:#c0392b;font-size:14px">{len(to_delete)}</b> 筆準備刪除：'
+                            f'{"　".join(to_delete)}</div>',
                             unsafe_allow_html=True
                         )
                         confirm_del = st.checkbox(
-                            f"⚠️ 我確認永久刪除以上 {len(to_delete)} 筆記錄（無法還原）",
+                            f"⚠️ 我確認要永久刪除以上 {len(to_delete)} 筆記錄（此操作無法還原）",
                             key="del_confirm"
                         )
                         del_exec_btn = st.button(
@@ -866,11 +865,11 @@ with tab_oqc:
                             if n_ok:
                                 st.success(f"✅ 已成功刪除 {n_ok} 筆：{', '.join(result['deleted'])}")
                             if n_bad:
-                                st.warning(f"⚠️ {n_bad} 筆找不到（可能已被刪除）：{', '.join(result['not_found'])}")
+                                st.warning(f"⚠️ {n_bad} 筆找不到：{', '.join(result['not_found'])}")
                             st.cache_data.clear()
                             st.rerun()
                     else:
-                        st.caption("💡 勾選左側核取方塊以選取要刪除的記錄")
+                        st.info("💡 請勾選上方表格左欄的核取方塊來選取要刪除的記錄")
 
 
 # ─────────────────────────────────────────────────────────
