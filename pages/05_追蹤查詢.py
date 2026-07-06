@@ -9,7 +9,13 @@ from datetime import datetime, date, timedelta
 
 from utils.style  import QMS_CSS, topbar, page_header
 from utils.auth   import require_login, user_info_bar
-from utils.gsheet import load_oqc_records, load_iqc_records, load_ipqc_records, update_oqc_record, delete_oqc_records
+from utils.gsheet import (
+    load_oqc_records,
+    load_iqc_records,
+    load_ipqc_records,
+    update_oqc_record,
+    delete_oqc_records,
+)
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 追蹤查詢",
