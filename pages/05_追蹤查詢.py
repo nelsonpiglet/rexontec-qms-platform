@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 
 from utils.style  import QMS_CSS, topbar, page_header
 from utils.auth   import require_login, user_info_bar
-from utils.gsheet import load_oqc_records, load_iqc_records, load_ipqc_records, update_oqc_record
+from utils.gsheet import load_oqc_records, load_iqc_records, load_ipqc_records, update_oqc_record, delete_oqc_records
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 追蹤查詢",
@@ -756,6 +756,115 @@ with tab_oqc:
                                 st.rerun()
                             else:
                                 st.error(f"❌ 找不到記錄 {sel_rec_id}，請重新整理後再試。")
+
+            # ── 刪除區塊 ──────────────────────────────────
+            st.markdown("---")
+            st.markdown("""
+<div style="background:#fff0f0;border:1px solid #f5b7b1;border-left:4px solid #c0392b;
+            border-radius:8px;padding:10px 14px;margin-bottom:10px">
+  <span style="font-size:13px;font-weight:700;color:#c0392b">🗑️ 刪除 OQC 檢驗單</span>
+  <span style="font-size:11px;color:#888;margin-left:8px">刪除後無法還原，請謹慎操作</span>
+</div>""", unsafe_allow_html=True)
+
+            if not rec_opts:
+                st.info("尚無 OQC 記錄。")
+            else:
+                # ── 篩選列（讓使用者先縮小範圍再勾選）──────
+                d1, d2, d3 = st.columns(3)
+                with d1:
+                    del_model_opts = ["全部機種"] + sorted(
+                        [str(x) for x in df_oqc["機種"].dropna().unique()
+                         if str(x).strip() not in ("", "nan")]
+                    )
+                    del_model = st.selectbox("機種篩選", del_model_opts, key="del_model")
+                with d2:
+                    del_pn = st.text_input("品號 / 料號篩選", placeholder="輸入料號…",
+                                           key="del_pn")
+                with d3:
+                    del_kw = st.text_input("批號 / 記錄編號篩選", placeholder="輸入批號或記錄編號…",
+                                           key="del_kw")
+
+                del_pool = df_oqc.copy()
+                if del_model != "全部機種":
+                    del_pool = del_pool[del_pool["機種"] == del_model]
+                if del_pn.strip():
+                    del_pool = del_pool[del_pool["料號"].astype(str).str.contains(
+                        del_pn.strip(), case=False, na=False)]
+                if del_kw.strip():
+                    del_pool = del_pool[
+                        del_pool["批號"].astype(str).str.contains(del_kw.strip(), case=False, na=False) |
+                        del_pool["記錄編號"].astype(str).str.contains(del_kw.strip(), case=False, na=False)
+                    ]
+
+                if del_pool.empty:
+                    st.warning("找不到符合條件的記錄。")
+                else:
+                    # 勾選表格
+                    del_show = del_pool[[c for c in [
+                        "記錄編號","建立時間","機種","料號","批號",
+                        "序號範圍","抽驗數量","總判定","檢驗員",
+                    ] if c in del_pool.columns]].copy()
+                    if "建立時間" in del_show.columns:
+                        del_show["建立時間"] = del_show["建立時間"].dt.strftime("%Y/%m/%d %H:%M")
+
+                    del_show.insert(0, "勾選刪除", False)
+
+                    edited = st.data_editor(
+                        del_show,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=min(480, 56 + len(del_show) * 38),
+                        column_config={
+                            "勾選刪除": st.column_config.CheckboxColumn(
+                                "☑ 刪除", width=70, default=False
+                            ),
+                            "記錄編號": st.column_config.TextColumn("記錄編號", width=180),
+                            "建立時間": st.column_config.TextColumn("建立時間", width=140),
+                            "機種":     st.column_config.TextColumn("機種",     width=130),
+                            "料號":     st.column_config.TextColumn("料號",     width=120),
+                            "批號":     st.column_config.TextColumn("批號",     width=140),
+                            "序號範圍": st.column_config.TextColumn("序號範圍", width=120),
+                            "抽驗數量": st.column_config.TextColumn("抽驗",     width=60),
+                            "總判定":   st.column_config.TextColumn("判定",     width=80),
+                            "檢驗員":   st.column_config.TextColumn("檢驗員",   width=80),
+                        },
+                        disabled=[c for c in del_show.columns if c != "勾選刪除"],
+                        key="del_editor",
+                    )
+
+                    to_delete = edited[edited["勾選刪除"] == True]["記錄編號"].tolist()
+
+                    if to_delete:
+                        st.markdown(
+                            f'<div style="background:#fdedec;border:1px solid #f5b7b1;'
+                            f'border-radius:6px;padding:8px 14px;font-size:12px;margin:6px 0">'
+                            f'已勾選 <b style="color:#c0392b">{len(to_delete)}</b> 筆：'
+                            f'{" ｜ ".join(to_delete)}</div>',
+                            unsafe_allow_html=True
+                        )
+                        confirm_del = st.checkbox(
+                            f"⚠️ 我確認永久刪除以上 {len(to_delete)} 筆記錄（無法還原）",
+                            key="del_confirm"
+                        )
+                        del_exec_btn = st.button(
+                            f"🗑️ 確認刪除 {len(to_delete)} 筆",
+                            type="primary",
+                            disabled=not confirm_del,
+                            key="del_exec"
+                        )
+                        if del_exec_btn:
+                            with st.spinner(f"刪除 {len(to_delete)} 筆記錄中…"):
+                                result = delete_oqc_records(to_delete)
+                            n_ok  = len(result["deleted"])
+                            n_bad = len(result["not_found"])
+                            if n_ok:
+                                st.success(f"✅ 已成功刪除 {n_ok} 筆：{', '.join(result['deleted'])}")
+                            if n_bad:
+                                st.warning(f"⚠️ {n_bad} 筆找不到（可能已被刪除）：{', '.join(result['not_found'])}")
+                            st.cache_data.clear()
+                            st.rerun()
+                    else:
+                        st.caption("💡 勾選左側核取方塊以選取要刪除的記錄")
 
 
 # ─────────────────────────────────────────────────────────

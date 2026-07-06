@@ -349,6 +349,47 @@ def update_oqc_record(rec_id: str, updates: dict) -> bool:
     return True
 
 
+def delete_oqc_records(rec_ids: list) -> dict:
+    """
+    批次刪除 OQC 記錄（從 Google Sheet 永久移除整列）。
+    rec_ids : 記錄編號列表（可混合 ESC / MD）
+    回傳: {"deleted": [...], "not_found": [...]}
+    刪除時從最大列號開始，避免刪除後列號位移。
+    """
+    deleted    = []
+    not_found  = []
+
+    esc_ids = [r for r in rec_ids if "ESC" in r]
+    md_ids  = [r for r in rec_ids if "ESC" not in r]
+
+    for sheet_name, columns, ids in [
+        (SHEET_ESC,   COLS_ESC,   esc_ids),
+        (SHEET_MOTOR, COLS_MOTOR, md_ids),
+    ]:
+        if not ids:
+            continue
+        ws       = _open_sheet(sheet_name, columns)
+        col_vals = ws.col_values(1)   # A欄 = 記錄編號
+
+        # 先收集所有要刪除的列號，由大到小排序（避免刪除後位移）
+        rows_to_delete = []
+        for rec_id in ids:
+            found = False
+            for i, val in enumerate(col_vals):
+                if val == rec_id:
+                    rows_to_delete.append((i + 1, rec_id))
+                    found = True
+                    break
+            if not found:
+                not_found.append(rec_id)
+
+        for row_num, rec_id in sorted(rows_to_delete, key=lambda x: x[0], reverse=True):
+            ws.delete_rows(row_num)
+            deleted.append(rec_id)
+
+    return {"deleted": deleted, "not_found": not_found}
+
+
 def load_iqc_records():
     """讀取所有 IQC 記錄，回傳 DataFrame"""
     import pandas as pd
