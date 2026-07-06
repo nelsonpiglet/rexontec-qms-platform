@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 
 from utils.style  import QMS_CSS, topbar, page_header
 from utils.auth   import require_login, user_info_bar
-from utils.gsheet import load_oqc_records, load_iqc_records, load_ipqc_records
+from utils.gsheet import load_oqc_records, load_iqc_records, load_ipqc_records, update_oqc_record
 
 st.set_page_config(
     page_title="REXONTEC 力科 | 追蹤查詢",
@@ -298,64 +298,127 @@ with tab_oqc:
     if df_oqc.empty:
         st.info("ℹ️ 尚無 OQC 資料，請先完成至少一筆出廠檢驗並提交。")
     else:
-        oqc_t1, oqc_t2, oqc_t3 = st.tabs(["📦 批號追蹤", "🔎 SN 序號追蹤", "📋 全部記錄"])
+        oqc_t1, oqc_t2, oqc_t3, oqc_t4 = st.tabs(
+            ["📦 批號追蹤", "🔎 SN 序號追蹤", "📋 全部記錄", "✏️ 修改檢驗單"]
+        )
 
-        # ── OQC Tab1：批號追蹤 ────────────────────────────
+        # ── OQC Tab1：批號 + 品號 + 出貨日期 + 機種 查詢 ───────
         with oqc_t1:
-            st.markdown("#### 🔍 依批號查詢")
-            lot_list = sorted(
-                [str(x) for x in df_oqc["批號"].dropna().unique()
-                 if str(x).strip() not in ("", "nan")],
-                reverse=True,
-            )
-            col_sel, col_pick = st.columns([3, 1])
-            with col_sel:
-                lot_input = st.text_input("輸入批號（或從下方選擇）",
+            st.markdown("#### 🔍 出廠檢驗查詢")
+            st.markdown("""
+<div style="background:#fff;border:1px solid #dce3ec;border-left:4px solid #1565c0;
+            border-radius:8px;padding:14px 18px;margin-bottom:14px;
+            box-shadow:0 2px 8px rgba(13,27,42,.08)">
+  <div style="font-size:12px;font-weight:700;color:#0d1b2a;margin-bottom:10px">🔎 查詢條件（可組合使用）</div>
+""", unsafe_allow_html=True)
+
+            q1, q2, q3 = st.columns(3)
+            with q1:
+                model_opts_t1 = ["全部機種"] + sorted(
+                    [str(x) for x in df_oqc["機種"].dropna().unique()
+                     if str(x).strip() not in ("", "nan")]
+                )
+                t1_model = st.selectbox("機種", model_opts_t1, key="oqc_t1_model")
+            with q2:
+                t1_pn = st.text_input("品號 / 料號", placeholder="輸入料號搜尋…",
+                                      key="oqc_t1_pn")
+            with q3:
+                lot_list = sorted(
+                    [str(x) for x in df_oqc["批號"].dropna().unique()
+                     if str(x).strip() not in ("", "nan")],
+                    reverse=True,
+                )
+                lot_input = st.text_input("批號（留空則不限）",
                                           placeholder="例：2026-05-A001",
                                           key="oqc_lot_input")
-            with col_pick:
-                st.markdown("<br>", unsafe_allow_html=True)
-                if lot_list:
-                    picked = st.selectbox("現有批號", [""] + lot_list,
-                                          key="oqc_lot_pick",
-                                          label_visibility="collapsed")
-                    if picked:
-                        lot_input = picked
 
-            query_lot = lot_input.strip()
+            q4, q5, q6 = st.columns(3)
+            with q4:
+                t1_date_from = st.date_input("出貨日期（起）", value=None,
+                                             key="oqc_t1_df", format="YYYY/MM/DD")
+            with q5:
+                t1_date_to = st.date_input("出貨日期（迄）", value=None,
+                                           key="oqc_t1_dt", format="YYYY/MM/DD")
+            with q6:
+                v_opts_t1 = ["全部"] + sorted(df_oqc["總判定"].dropna().unique().tolist())
+                t1_verdict = st.selectbox("判定結果", v_opts_t1, key="oqc_t1_v")
 
-            if not query_lot:
-                st.markdown("##### 最近批號一覽")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # 套用篩選
+            t1_view = df_oqc.copy()
+            if t1_model != "全部機種":
+                t1_view = t1_view[t1_view["機種"] == t1_model]
+            if t1_pn.strip():
+                t1_view = t1_view[t1_view["料號"].astype(str).str.contains(
+                    t1_pn.strip(), case=False, na=False)]
+            if lot_input.strip():
+                t1_view = t1_view[t1_view["批號"].astype(str).str.contains(
+                    lot_input.strip(), case=False, na=False)]
+            if t1_date_from:
+                t1_view = t1_view[t1_view["建立時間"].dt.date >= t1_date_from]
+            if t1_date_to:
+                t1_view = t1_view[t1_view["建立時間"].dt.date <= t1_date_to]
+            if t1_verdict != "全部":
+                t1_view = t1_view[t1_view["總判定"] == t1_verdict]
+
+            any_filter = (
+                t1_model != "全部機種" or t1_pn.strip() or lot_input.strip()
+                or t1_date_from or t1_date_to or t1_verdict != "全部"
+            )
+
+            if not any_filter:
+                # 未輸入任何條件時顯示最近批號摘要
+                st.markdown("##### 最近批號一覽（輸入條件後自動篩選）")
                 recent = (
                     df_oqc.groupby("批號", dropna=False)
                     .agg(
                         筆數    =("記錄編號", "count"),
                         最近日期=("建立時間", "max"),
                         機種    =("機種", lambda x: " / ".join(x.dropna().unique()[:3])),
-                        合格率  =("總判定", lambda x: f"{(x == 'PASS').mean()*100:.0f}%"),
+                        料號    =("料號", lambda x: " / ".join(x.dropna().unique()[:2])),
+                        合格率  =("總判定", lambda x: f"{(x=='PASS').mean()*100:.0f}%"),
                     )
                     .sort_values("最近日期", ascending=False)
-                    .head(10)
+                    .head(15)
                     .reset_index()
                 )
                 recent["最近日期"] = recent["最近日期"].dt.strftime("%Y/%m/%d")
                 st.dataframe(recent, use_container_width=True, hide_index=True)
-                st.caption("💡 輸入批號後按 Enter 可查看詳細記錄")
+                st.caption("💡 設定上方條件（品號 / 出貨日期 / 機種 / 批號）可篩選明細")
             else:
-                lot_df = df_oqc[df_oqc["批號"].astype(str) == query_lot].copy()
-                if lot_df.empty:
-                    st.warning(f"⚠️ 找不到批號「{query_lot}」的記錄")
+                total  = len(t1_view)
+                n_pass = (t1_view["總判定"] == "PASS").sum()
+                n_fail = total - n_pass
+                cr_s   = t1_view["CR_不良數"].astype(int).sum() if "CR_不良數" in t1_view else 0
+                ma_s   = t1_view["MA_不良數"].astype(int).sum() if "MA_不良數" in t1_view else 0
+                mi_s   = t1_view["MI_不良數"].astype(int).sum() if "MI_不良數" in t1_view else 0
+                label  = lot_input.strip() or t1_pn.strip() or t1_model or f"{total} 筆"
+                _stat_cards(total, n_pass, n_fail, cr_s, ma_s, mi_s, label)
+
+                if t1_view.empty:
+                    st.warning("⚠️ 沒有符合條件的記錄")
                 else:
-                    total  = len(lot_df)
-                    n_pass = (lot_df["總判定"] == "PASS").sum()
-                    n_fail = total - n_pass
-                    cr_s   = lot_df["CR_不良數"].astype(int).sum() if "CR_不良數" in lot_df else 0
-                    ma_s   = lot_df["MA_不良數"].astype(int).sum() if "MA_不良數" in lot_df else 0
-                    mi_s   = lot_df["MI_不良數"].astype(int).sum() if "MI_不良數" in lot_df else 0
-                    _stat_cards(total, n_pass, n_fail, cr_s, ma_s, mi_s, query_lot)
-                    st.markdown("##### 檢驗記錄明細")
-                    for _, row in lot_df.iterrows():
-                        _render_oqc_record(row)
+                    # 摘要清單
+                    sum_cols = [c for c in [
+                        "記錄編號","建立時間","機種","料號","批號",
+                        "序號範圍","抽驗數量","總判定","CR_不良數","MA_不良數","MI_不良數","檢驗員",
+                    ] if c in t1_view.columns]
+                    sum_disp = t1_view[sum_cols].copy()
+                    if "建立時間" in sum_disp.columns:
+                        sum_disp["建立時間"] = sum_disp["建立時間"].dt.strftime("%Y/%m/%d %H:%M")
+                    st.caption(f"共 {total} 筆")
+                    st.dataframe(sum_disp, use_container_width=True, hide_index=True,
+                                 height=min(420, 56 + len(sum_disp) * 38))
+
+                    # 明細展開（≤30 筆才展開）
+                    if total <= 30:
+                        st.markdown("---")
+                        st.markdown("##### 點擊展開各筆明細")
+                        for _, row in t1_view.iterrows():
+                            _render_oqc_record(row)
+                    else:
+                        st.caption("🔍 結果超過 30 筆，請縮小查詢範圍以展開明細。")
 
         # ── OQC Tab2：SN 序號追蹤 ──────────────────────────
         with oqc_t2:
@@ -520,6 +583,179 @@ with tab_oqc:
                     _render_oqc_record(row)
             elif len(filtered) > 50:
                 st.caption("🔍 篩選結果超過 50 筆，請縮小查詢範圍以展開明細。")
+
+        # ── OQC Tab4：修改檢驗單 ──────────────────────────
+        with oqc_t4:
+            st.markdown("#### ✏️ 修改已提交的檢驗單")
+            st.markdown("""
+<div style="background:#fffbea;border:1px solid #f5c518;border-left:4px solid #f5c518;
+            border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#555">
+  ⚠️ 修改將直接更新 Google Sheet 原始記錄。僅限修改表頭欄位（機種/料號/批號/數量/檢驗員/備註/判定），
+  序號明細（明細JSON）請至原始工作表修改。
+</div>""", unsafe_allow_html=True)
+
+            # 選擇要修改的記錄
+            rec_opts = df_oqc["記錄編號"].dropna().tolist()
+            if not rec_opts:
+                st.info("尚無 OQC 記錄可供修改。")
+            else:
+                e1, e2 = st.columns([3, 1])
+                with e1:
+                    edit_kw = st.text_input("搜尋記錄（輸入記錄編號 / 機種 / 料號 / 批號）",
+                                            placeholder="例：OQC-MD-2026-0001 或 機種名稱",
+                                            key="oqc_edit_kw")
+                with e2:
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    edit_show_all = st.checkbox("顯示全部", key="oqc_edit_show_all")
+
+                # 篩選可選記錄
+                edit_pool = df_oqc.copy()
+                if edit_kw.strip() and not edit_show_all:
+                    kw = edit_kw.strip()
+                    edit_pool = edit_pool[
+                        edit_pool["記錄編號"].astype(str).str.contains(kw, case=False, na=False) |
+                        edit_pool["機種"].astype(str).str.contains(kw, case=False, na=False) |
+                        edit_pool["料號"].astype(str).str.contains(kw, case=False, na=False) |
+                        edit_pool["批號"].astype(str).str.contains(kw, case=False, na=False)
+                    ]
+
+                if edit_pool.empty:
+                    st.warning("找不到符合條件的記錄，請調整搜尋關鍵字。")
+                else:
+                    # 下拉選單格式：記錄編號 | 日期 | 機種 | 批號
+                    def _rec_label(r):
+                        dt = r["建立時間"].strftime("%Y/%m/%d") if pd.notna(r["建立時間"]) else "─"
+                        return f"{r['記錄編號']}　{dt}　{r.get('機種','─')}　{r.get('批號','─')}"
+
+                    edit_labels = edit_pool.apply(_rec_label, axis=1).tolist()
+                    edit_rec_ids = edit_pool["記錄編號"].tolist()
+                    label_map = dict(zip(edit_labels, edit_rec_ids))
+
+                    sel_label = st.selectbox(
+                        f"選擇要修改的記錄（共 {len(edit_pool)} 筆）",
+                        edit_labels,
+                        key="oqc_edit_sel"
+                    )
+                    sel_rec_id = label_map.get(sel_label, "")
+
+                    if sel_rec_id:
+                        cur_row = df_oqc[df_oqc["記錄編號"] == sel_rec_id].iloc[0]
+
+                        st.markdown("---")
+                        st.markdown(f"**修改：`{sel_rec_id}`**")
+
+                        with st.form("oqc_edit_form"):
+                            ef1, ef2, ef3 = st.columns(3)
+                            with ef1:
+                                e_model = st.text_input(
+                                    "機種",
+                                    value=str(cur_row.get("機種", "")),
+                                    key="ef_model"
+                                )
+                            with ef2:
+                                e_pn = st.text_input(
+                                    "料號（品號）",
+                                    value=str(cur_row.get("料號", "")),
+                                    key="ef_pn"
+                                )
+                            with ef3:
+                                e_customer = st.text_input(
+                                    "客戶名稱",
+                                    value=str(cur_row.get("客戶名稱", "")),
+                                    key="ef_cust"
+                                )
+
+                            ef4, ef5, ef6 = st.columns(3)
+                            with ef4:
+                                e_batch = st.text_input(
+                                    "批號",
+                                    value=str(cur_row.get("批號", "")),
+                                    key="ef_batch"
+                                )
+                            with ef5:
+                                e_serial = st.text_input(
+                                    "序號範圍",
+                                    value=str(cur_row.get("序號範圍", "")),
+                                    key="ef_serial"
+                                )
+                            with ef6:
+                                e_qty = st.text_input(
+                                    "本批數量",
+                                    value=str(cur_row.get("本批數量", "")),
+                                    key="ef_qty"
+                                )
+
+                            ef7, ef8, ef9 = st.columns(3)
+                            with ef7:
+                                e_sample = st.text_input(
+                                    "抽驗數量",
+                                    value=str(cur_row.get("抽驗數量", "")),
+                                    key="ef_sample"
+                                )
+                            with ef8:
+                                e_inspector = st.text_input(
+                                    "檢驗員",
+                                    value=str(cur_row.get("檢驗員", "")),
+                                    key="ef_insp"
+                                )
+                            with ef9:
+                                e_supervisor = st.text_input(
+                                    "主管(品保)",
+                                    value=str(cur_row.get("主管(品保)", "")),
+                                    key="ef_sup"
+                                )
+
+                            ef10, ef11 = st.columns([1, 2])
+                            with ef10:
+                                verdict_opts = ["PASS", "FAIL", "FAIL(MI)", "待審"]
+                                cur_v = str(cur_row.get("總判定", "PASS"))
+                                v_idx = verdict_opts.index(cur_v) if cur_v in verdict_opts else 0
+                                e_verdict = st.selectbox(
+                                    "總判定",
+                                    verdict_opts,
+                                    index=v_idx,
+                                    key="ef_verdict"
+                                )
+                            with ef11:
+                                e_note = st.text_area(
+                                    "備註",
+                                    value=str(cur_row.get("備註", "")),
+                                    height=68,
+                                    key="ef_note"
+                                )
+
+                            e_ng_summary = st.text_area(
+                                "NG 項目摘要（若有修改請更新）",
+                                value=str(cur_row.get("NG_項目摘要", "")) if str(cur_row.get("NG_項目摘要", "")) != "nan" else "",
+                                height=60,
+                                key="ef_ng"
+                            )
+
+                            save_btn = st.form_submit_button("💾 儲存修改", type="primary")
+
+                        if save_btn:
+                            updates = {
+                                "機種":       e_model,
+                                "料號":       e_pn,
+                                "客戶名稱":   e_customer,
+                                "批號":       e_batch,
+                                "序號範圍":   e_serial,
+                                "本批數量":   e_qty,
+                                "抽驗數量":   e_sample,
+                                "檢驗員":     e_inspector,
+                                "主管(品保)": e_supervisor,
+                                "總判定":     e_verdict,
+                                "備註":       e_note,
+                                "NG_項目摘要": e_ng_summary,
+                            }
+                            with st.spinner("更新中…"):
+                                ok = update_oqc_record(sel_rec_id, updates)
+                            if ok:
+                                st.success(f"✅ {sel_rec_id} 已成功更新！")
+                                st.cache_data.clear()
+                                st.rerun()
+                            else:
+                                st.error(f"❌ 找不到記錄 {sel_rec_id}，請重新整理後再試。")
 
 
 # ─────────────────────────────────────────────────────────

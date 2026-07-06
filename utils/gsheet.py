@@ -315,6 +315,40 @@ def load_oqc_records(product_type: str):
         return pd.DataFrame(columns=columns)
 
 
+def _find_oqc_row(ws, rec_id: str) -> int:
+    """回傳 記錄編號 所在列號（1-based），找不到回傳 -1"""
+    col_vals = ws.col_values(1)   # A欄 = 記錄編號
+    for i, val in enumerate(col_vals):
+        if val == rec_id:
+            return i + 1
+    return -1
+
+
+def update_oqc_record(rec_id: str, updates: dict) -> bool:
+    """
+    更新 OQC 記錄的指定欄位。
+    rec_id  : 記錄編號（OQC-ESC-... 或 OQC-MD-...）
+    updates : {欄位名: 新值, ...}
+    回傳 True 成功 / False 找不到
+    """
+    is_esc     = "ESC" in rec_id
+    sheet_name = SHEET_ESC if is_esc else SHEET_MOTOR
+    columns    = COLS_ESC  if is_esc else COLS_MOTOR
+
+    ws      = _open_sheet(sheet_name, columns)
+    row_num = _find_oqc_row(ws, rec_id)
+    if row_num == -1:
+        return False
+
+    now_str = datetime.now().strftime("%Y/%m/%d %H:%M")
+    for field, value in updates.items():
+        if field in columns:
+            col_idx = columns.index(field) + 1
+            ws.update_cell(row_num, col_idx, str(value) if value is not None else "")
+
+    return True
+
+
 def load_iqc_records():
     """讀取所有 IQC 記錄，回傳 DataFrame"""
     import pandas as pd
