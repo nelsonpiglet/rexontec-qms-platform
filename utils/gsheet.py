@@ -2,6 +2,7 @@
 REXONTEC OQC — Google Sheet 連線與讀寫
 試算表需含兩個工作表：OQC_電調 / OQC_馬達
 """
+from __future__ import annotations
 
 import gspread
 import streamlit as st
