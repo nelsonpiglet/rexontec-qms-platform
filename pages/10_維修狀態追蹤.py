@@ -551,41 +551,53 @@ STEP_STYLE = ('<div style="font-size:13px;font-weight:700;color:var(--navy);'
               '{label}</div>')
 
 # ───────── Step 1 外觀檢測 ─────────
-st.markdown(STEP_STYLE.format(label="Step 1 🔬 外觀檢測"), unsafe_allow_html=True)
-c1a, c1b, c1c, c1d = st.columns(4)
-with c1a: s1_shell = st.checkbox("外殼撞傷", value=_b("S1-外殼撞傷"), key=f"s1sh_{det_rma}")
-with c1b: s1_axis  = st.checkbox("軸心歪斜", value=_b("S1-軸心歪斜"), key=f"s1ax_{det_rma}")
-with c1c: s1_sand  = st.checkbox("沙土侵入", value=_b("S1-沙土侵入"), key=f"s1sd_{det_rma}")
-with c1d: s1_screw = st.checkbox("螺絲裂痕", value=_b("S1-螺絲裂痕"), key=f"s1sc_{det_rma}")
-_c1e1, _c1e2, _c1e3, _c1e4 = st.columns(4)
-with _c1e1: s1_ok = st.checkbox("正常", value=_b("S1-正常"), key=f"s1ok_{det_rma}")
-_s1_cust_vals = _render_custom("S1", _s1_custom, det_rma)
+_hdr1, _skip1 = st.columns([5, 1])
+with _hdr1:
+    st.markdown(STEP_STYLE.format(label="Step 1 🔬 外觀檢測"), unsafe_allow_html=True)
+with _skip1:
+    s1_skip = st.checkbox("不檢驗", value=_b("S1-略過"), key=f"s1sk_{det_rma}")
 
-# 人為撞擊提前終止
-if s1_axis and s1_shell:
-    st.markdown(
-        '<div style="background:#fff3f3;border:2px solid #e74c3c;border-radius:8px;'
-        'padding:12px 18px;margin:8px 0 4px;font-size:13px;font-weight:700;color:#c0392b">'
-        '⚠️ 已符合人為撞擊判定，建議停止後續檢測</div>',
-        unsafe_allow_html=True)
-    et_c1, et_c2, et_c3 = st.columns([2, 2, 4])
-    with et_c1:
-        if st.button("🛑 結束檢測", key=f"et_stop_btn_{det_rma}", type="primary"):
-            st.session_state[_et_stop_key]  = True
-            st.session_state[_et_scrap_key] = False
-            st.rerun()
-    with et_c2:
-        if st.button("♻️ 轉報廢流程", key=f"et_scrap_btn_{det_rma}"):
-            st.session_state[_et_scrap_key] = True
-            st.session_state[_et_stop_key]  = False
-            st.rerun()
-    if st.session_state.get(_et_stop_key, False):
-        st.info("⏹ 已選擇結束檢測，步驟 2–5 已跳過。")
-    elif st.session_state.get(_et_scrap_key, False):
-        st.info("♻️ 已選擇轉報廢流程，請填寫下方最終結果。")
+if not s1_skip:
+    c1a, c1b, c1c, c1d = st.columns(4)
+    with c1a: s1_shell = st.checkbox("外殼撞傷", value=_b("S1-外殼撞傷"), key=f"s1sh_{det_rma}")
+    with c1b: s1_axis  = st.checkbox("軸心歪斜", value=_b("S1-軸心歪斜"), key=f"s1ax_{det_rma}")
+    with c1c: s1_sand  = st.checkbox("沙土侵入", value=_b("S1-沙土侵入"), key=f"s1sd_{det_rma}")
+    with c1d: s1_screw = st.checkbox("螺絲裂痕", value=_b("S1-螺絲裂痕"), key=f"s1sc_{det_rma}")
+    _c1e1, _c1e2, _c1e3, _c1e4 = st.columns(4)
+    with _c1e1: s1_ok = st.checkbox("正常", value=_b("S1-正常"), key=f"s1ok_{det_rma}")
+    _s1_cust_vals = _render_custom("S1", _s1_custom, det_rma)
+
+    # 人為撞擊提前終止
+    if s1_axis and s1_shell:
+        st.markdown(
+            '<div style="background:#fff3f3;border:2px solid #e74c3c;border-radius:8px;'
+            'padding:12px 18px;margin:8px 0 4px;font-size:13px;font-weight:700;color:#c0392b">'
+            '⚠️ 已符合人為撞擊判定，建議停止後續檢測</div>',
+            unsafe_allow_html=True)
+        et_c1, et_c2, et_c3 = st.columns([2, 2, 4])
+        with et_c1:
+            if st.button("🛑 結束檢測", key=f"et_stop_btn_{det_rma}", type="primary"):
+                st.session_state[_et_stop_key]  = True
+                st.session_state[_et_scrap_key] = False
+                st.rerun()
+        with et_c2:
+            if st.button("♻️ 轉報廢流程", key=f"et_scrap_btn_{det_rma}"):
+                st.session_state[_et_scrap_key] = True
+                st.session_state[_et_stop_key]  = False
+                st.rerun()
+        if st.session_state.get(_et_stop_key, False):
+            st.info("⏹ 已選擇結束檢測，步驟 2–5 已跳過。")
+        elif st.session_state.get(_et_scrap_key, False):
+            st.info("♻️ 已選擇轉報廢流程，請填寫下方最終結果。")
+    else:
+        st.session_state.pop(_et_stop_key, None)
+        st.session_state.pop(_et_scrap_key, None)
 else:
+    s1_shell = s1_axis = s1_sand = s1_screw = s1_ok = False
+    _s1_cust_vals = {}
     st.session_state.pop(_et_stop_key, None)
     st.session_state.pop(_et_scrap_key, None)
+    st.caption("ℹ️ 此步驟標記為不檢驗")
 
 _is_early_stop  = st.session_state.get(_et_stop_key, False)
 _is_early_scrap = st.session_state.get(_et_scrap_key, False)
@@ -593,56 +605,86 @@ _is_early_scrap = st.session_state.get(_et_scrap_key, False)
 s2_noise = s2_stuck = s2_bearing = s2_ok = False
 s3_ab = s3_bc = s3_ca = 0.0
 coil_bad, coil_dev = False, 0.0
-s4_vib = s4_heat = s4_start = s4_ok = False
+s4_vib = s4_heat = s4_start = s4_noise = s4_ok = False
 s5_coil = s5_magnet = s5_rust = s5_ok = False
 _s2_cust_vals = {}; _s4_cust_vals = {}; _s5_cust_vals = {}
+s2_skip = s3_skip = s4_skip = s5_skip = False
 
 if not _is_early_stop:
     # ───────── Step 2 手感測試 ─────────
-    st.markdown(STEP_STYLE.format(label="Step 2 🤚 手感測試"), unsafe_allow_html=True)
-    c2a, c2b, c2c, c2d = st.columns(4)
-    with c2a: s2_noise   = st.checkbox("異音",     value=_b("S2-異音"),     key=f"s2no_{det_rma}")
-    with c2b: s2_stuck   = st.checkbox("卡頓",     value=_b("S2-卡頓"),     key=f"s2st_{det_rma}")
-    with c2c: s2_bearing = st.checkbox("軸承鬆動", value=_b("S2-軸承鬆動"), key=f"s2be_{det_rma}")
-    with c2d: s2_ok      = st.checkbox("正常",     value=_b("S2-正常"),     key=f"s2ok_{det_rma}")
-    _s2_cust_vals = _render_custom("S2", _s2_custom, det_rma)
+    _hdr2, _skip2 = st.columns([5, 1])
+    with _hdr2:
+        st.markdown(STEP_STYLE.format(label="Step 2 🤚 手感測試"), unsafe_allow_html=True)
+    with _skip2:
+        s2_skip = st.checkbox("不檢驗", value=_b("S2-略過"), key=f"s2sk_{det_rma}")
+    if not s2_skip:
+        c2a, c2b, c2c, c2d = st.columns(4)
+        with c2a: s2_noise   = st.checkbox("異音",     value=_b("S2-異音"),     key=f"s2no_{det_rma}")
+        with c2b: s2_stuck   = st.checkbox("卡頓",     value=_b("S2-卡頓"),     key=f"s2st_{det_rma}")
+        with c2c: s2_bearing = st.checkbox("軸承鬆動", value=_b("S2-軸承鬆動"), key=f"s2be_{det_rma}")
+        with c2d: s2_ok      = st.checkbox("正常",     value=_b("S2-正常"),     key=f"s2ok_{det_rma}")
+        _s2_cust_vals = _render_custom("S2", _s2_custom, det_rma)
+    else:
+        st.caption("ℹ️ 此步驟標記為不檢驗")
 
     # ───────── Step 3 電氣測試 ─────────
-    st.markdown(STEP_STYLE.format(label="Step 3 ⚡ 電氣測試（三用電表）"), unsafe_allow_html=True)
-    c3a, c3b, c3c = st.columns(3)
-    with c3a: s3_ab = st.number_input("AB 阻值 (Ω)", value=_f("S3-AB阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ab_{det_rma}")
-    with c3b: s3_bc = st.number_input("BC 阻值 (Ω)", value=_f("S3-BC阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3bc_{det_rma}")
-    with c3c: s3_ca = st.number_input("CA 阻值 (Ω)", value=_f("S3-CA阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ca_{det_rma}")
-    coil_bad, coil_dev = _coil_abnormal(s3_ab, s3_bc, s3_ca)
-    if s3_ab > 0 or s3_bc > 0 or s3_ca > 0:
-        if coil_bad:
-            st.error(f"⚠️ 線圈異常：三組阻值最大差異 **{coil_dev:.1f}%**（超過 10% 閾值）")
-        else:
-            st.success(f"✅ 阻值均衡：差異 {coil_dev:.1f}%（< 10%），正常")
+    _hdr3, _skip3 = st.columns([5, 1])
+    with _hdr3:
+        st.markdown(STEP_STYLE.format(label="Step 3 ⚡ 電氣測試（三用電表）"), unsafe_allow_html=True)
+    with _skip3:
+        s3_skip = st.checkbox("不檢驗", value=_b("S3-略過"), key=f"s3sk_{det_rma}")
+    if not s3_skip:
+        c3a, c3b, c3c = st.columns(3)
+        with c3a: s3_ab = st.number_input("AB 阻值 (Ω)", value=_f("S3-AB阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ab_{det_rma}")
+        with c3b: s3_bc = st.number_input("BC 阻值 (Ω)", value=_f("S3-BC阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3bc_{det_rma}")
+        with c3c: s3_ca = st.number_input("CA 阻值 (Ω)", value=_f("S3-CA阻值"), min_value=0.0, step=0.1, format="%.2f", key=f"s3ca_{det_rma}")
+        coil_bad, coil_dev = _coil_abnormal(s3_ab, s3_bc, s3_ca)
+        if s3_ab > 0 or s3_bc > 0 or s3_ca > 0:
+            if coil_bad:
+                st.error(f"⚠️ 線圈異常：三組阻值最大差異 **{coil_dev:.1f}%**（超過 10% 閾值）")
+            else:
+                st.success(f"✅ 阻值均衡：差異 {coil_dev:.1f}%（< 10%），正常")
+    else:
+        st.caption("ℹ️ 此步驟標記為不檢驗")
 
     # ───────── Step 4 通電測試 ─────────
-    st.markdown(STEP_STYLE.format(label="Step 4 🔌 通電測試"), unsafe_allow_html=True)
-    c4a, c4b, c4c, c4d = st.columns(4)
-    with c4a: s4_vib   = st.checkbox("高震動",   value=_b("S4-高震動"),   key=f"s4vb_{det_rma}")
-    with c4b: s4_heat  = st.checkbox("高溫",     value=_b("S4-高溫"),     key=f"s4ht_{det_rma}")
-    with c4c: s4_start = st.checkbox("無法啟動", value=_b("S4-無法啟動"), key=f"s4st_{det_rma}")
-    with c4d: s4_ok    = st.checkbox("正常",     value=_b("S4-正常"),     key=f"s4ok_{det_rma}")
-    _s4_cust_vals = _render_custom("S4", _s4_custom, det_rma)
+    _hdr4, _skip4 = st.columns([5, 1])
+    with _hdr4:
+        st.markdown(STEP_STYLE.format(label="Step 4 🔌 通電測試"), unsafe_allow_html=True)
+    with _skip4:
+        s4_skip = st.checkbox("不檢驗", value=_b("S4-略過"), key=f"s4sk_{det_rma}")
+    if not s4_skip:
+        c4a, c4b, c4c, c4d, c4e = st.columns(5)
+        with c4a: s4_vib   = st.checkbox("高震動",   value=_b("S4-高震動"),   key=f"s4vb_{det_rma}")
+        with c4b: s4_heat  = st.checkbox("高溫",     value=_b("S4-高溫"),     key=f"s4ht_{det_rma}")
+        with c4c: s4_start = st.checkbox("無法啟動", value=_b("S4-無法啟動"), key=f"s4st_{det_rma}")
+        with c4d: s4_noise = st.checkbox("異音",     value=_b("S4-異音"),     key=f"s4no_{det_rma}")
+        with c4e: s4_ok    = st.checkbox("正常",     value=_b("S4-正常"),     key=f"s4ok_{det_rma}")
+        _s4_cust_vals = _render_custom("S4", _s4_custom, det_rma)
+    else:
+        st.caption("ℹ️ 此步驟標記為不檢驗")
 
     # ───────── Step 5 拆解分析 ─────────
-    st.markdown(STEP_STYLE.format(label="Step 5 🔩 拆解分析"), unsafe_allow_html=True)
-    c5a, c5b, c5c, c5d = st.columns(4)
-    with c5a: s5_coil   = st.checkbox("線圈燒毀", value=_b("S5-線圈燒毀"), key=f"s5co_{det_rma}")
-    with c5b: s5_magnet = st.checkbox("磁鐵脫落", value=_b("S5-磁鐵脫落"), key=f"s5mg_{det_rma}")
-    with c5c: s5_rust   = st.checkbox("生鏽",     value=_b("S5-生鏽"),     key=f"s5rs_{det_rma}")
-    with c5d: s5_ok     = st.checkbox("正常",     value=_b("S5-正常"),     key=f"s5ok_{det_rma}")
-    _s5_cust_vals = _render_custom("S5", _s5_custom, det_rma)
+    _hdr5, _skip5 = st.columns([5, 1])
+    with _hdr5:
+        st.markdown(STEP_STYLE.format(label="Step 5 🔩 拆解分析"), unsafe_allow_html=True)
+    with _skip5:
+        s5_skip = st.checkbox("不檢驗", value=_b("S5-略過"), key=f"s5sk_{det_rma}")
+    if not s5_skip:
+        c5a, c5b, c5c, c5d = st.columns(4)
+        with c5a: s5_coil   = st.checkbox("線圈燒毀", value=_b("S5-線圈燒毀"), key=f"s5co_{det_rma}")
+        with c5b: s5_magnet = st.checkbox("磁鐵脫落", value=_b("S5-磁鐵脫落"), key=f"s5mg_{det_rma}")
+        with c5c: s5_rust   = st.checkbox("生鏽",     value=_b("S5-生鏽"),     key=f"s5rs_{det_rma}")
+        with c5d: s5_ok     = st.checkbox("正常",     value=_b("S5-正常"),     key=f"s5ok_{det_rma}")
+        _s5_cust_vals = _render_custom("S5", _s5_custom, det_rma)
 
-    if coil_bad and s5_coil:
-        st.markdown(
-            '<div style="background:#e8f8f5;border:1px solid #a9dfbf;border-radius:6px;'
-            'padding:9px 14px;font-size:12.5px;color:var(--teal);font-weight:700;margin:6px 0">'
-            '✅ 已確認線圈燒毀</div>', unsafe_allow_html=True)
+        if coil_bad and s5_coil:
+            st.markdown(
+                '<div style="background:#e8f8f5;border:1px solid #a9dfbf;border-radius:6px;'
+                'padding:9px 14px;font-size:12.5px;color:var(--teal);font-weight:700;margin:6px 0">'
+                '✅ 已確認線圈燒毀</div>', unsafe_allow_html=True)
+    else:
+        st.caption("ℹ️ 此步驟標記為不檢驗")
 
 # 自動判定橫幅
 auto_msgs = []
@@ -695,23 +737,29 @@ with pdf_col:
 if save_det:
     now_str  = datetime.now().strftime("%Y/%m/%d %H:%M")
     det_data = {
+        "S1-略過":     "是" if s1_skip   else "否",
         "S1-外殼撞傷": "是" if s1_shell else "否",
         "S1-軸心歪斜": "是" if s1_axis  else "否",
         "S1-沙土侵入": "是" if s1_sand  else "否",
         "S1-螺絲裂痕": "是" if s1_screw else "否",
         "S1-正常":     "是" if s1_ok    else "否",
+        "S2-略過":     "是" if s2_skip    else "否",
         "S2-異音":     "是" if s2_noise   else "否",
         "S2-卡頓":     "是" if s2_stuck   else "否",
         "S2-軸承鬆動": "是" if s2_bearing else "否",
         "S2-正常":     "是" if s2_ok      else "否",
+        "S3-略過":     "是" if s3_skip  else "否",
         "S3-AB阻值":   round(s3_ab, 3),
         "S3-BC阻值":   round(s3_bc, 3),
         "S3-CA阻值":   round(s3_ca, 3),
         "S3-線圈異常": "是" if coil_bad else "否",
+        "S4-略過":     "是" if s4_skip   else "否",
         "S4-高震動":   "是" if s4_vib   else "否",
         "S4-高溫":     "是" if s4_heat  else "否",
         "S4-無法啟動": "是" if s4_start else "否",
+        "S4-異音":     "是" if s4_noise else "否",
         "S4-正常":     "是" if s4_ok    else "否",
+        "S5-略過":     "是" if s5_skip   else "否",
         "S5-線圈燒毀": "是" if s5_coil   else "否",
         "S5-磁鐵脫落": "是" if s5_magnet else "否",
         "S5-生鏽":     "是" if s5_rust   else "否",
