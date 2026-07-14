@@ -2,6 +2,7 @@
 REXONTEC 力科 — 維修保養系統 Google Sheet 連線工具
 試算表：返廠主單 (RMA Master)  主單編號格式：RMA-B2026-001
 """
+from __future__ import annotations
 from datetime import datetime
 
 SPREADSHEET_ID    = "1OksPtvaabwXIMdO8gPA7A6s6oHpLy_Liewcc_pyOmA8"
