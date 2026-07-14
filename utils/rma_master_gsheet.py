@@ -143,6 +143,18 @@ def update_master_status(master_id: str, new_status: str) -> bool:
     return True
 
 
+def update_master_fields(master_id: str, fields: dict) -> bool:
+    """更新主單任意欄位，fields = {欄位名稱: 新值, ...}"""
+    sheet   = get_master_sheet()
+    row_num = _find_row(sheet, master_id)
+    if row_num == -1:
+        return False
+    for col_name, value in fields.items():
+        if col_name in MASTER_COL:
+            sheet.update_cell(row_num, MASTER_COL[col_name], str(value) if value is not None else "")
+    return True
+
+
 def sync_master_status(master_id: str, details_df) -> str:
     """
     依子件狀態計算主單整體狀態並寫回 Google Sheet。

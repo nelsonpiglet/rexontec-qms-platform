@@ -9,7 +9,7 @@ import urllib.request
 from datetime import datetime, timedelta
 from utils.rma_master_gsheet  import (load_all_masters, update_master_status,
                                        sync_master_status, delete_master,
-                                       MASTER_DONE_STATUS)
+                                       update_master_fields, MASTER_DONE_STATUS)
 from utils.rma_detail_gsheet  import (load_all_details, load_details_by_master,
                                        update_detail_status, update_detail_detection,
                                        update_detail_photos, get_detail_photos,
@@ -292,6 +292,50 @@ st.markdown(f"""
     </div>
   </div>
 </div>""", unsafe_allow_html=True)
+
+
+# ── 主單資訊快速編輯 ──────────────────────────────────
+MASTER_REPAIR_TYPES = [
+    "摔落損傷", "飛機迫降", "試飛摔落", "試轉卡頓",
+    "無載運轉異常", "飛測摔落", "飛測墜毀",
+    "上電燒毀", "試轉異常", "重落地損傷",
+    "保固維修（購買2年內）", "自費維修", "定期保養", "可靠度測試",
+]
+MASTER_PRIORITIES = ["P1 緊急（2個工作天）","P2 高（5個工作天）","P3 一般（7個工作天）","P4 低（14個工作天）"]
+
+with st.expander("✏️ 修改主單資訊（維修類型 / 優先等級 / 備註）", expanded=False):
+    with st.form("master_edit_form"):
+        me1, me2 = st.columns(2)
+        with me1:
+            cur_rt = mr.get("維修類型", "")
+            _rt_opts = MASTER_REPAIR_TYPES if cur_rt in MASTER_REPAIR_TYPES else [cur_rt] + MASTER_REPAIR_TYPES
+            new_rt = st.selectbox("維修類型", _rt_opts,
+                                  index=_rt_opts.index(cur_rt) if cur_rt in _rt_opts else 0)
+        with me2:
+            cur_pri = str(mr.get("優先等級", "P3"))
+            _pri_opts = ["P1","P2","P3","P4"]
+            new_pri = st.selectbox("優先等級",
+                                   _pri_opts,
+                                   index=_pri_opts.index(cur_pri[:2]) if cur_pri[:2] in _pri_opts else 2,
+                                   format_func=lambda p: next((x for x in MASTER_PRIORITIES if x.startswith(p)), p))
+        new_note = st.text_input("備註", value=mr.get("備註",""), placeholder="補充說明")
+        save_master = st.form_submit_button("💾 儲存主單修改", type="primary")
+
+    if save_master:
+        changed = {}
+        if new_rt  != cur_rt:          changed["維修類型"] = new_rt
+        if new_pri != cur_pri[:2]:     changed["優先等級"] = new_pri
+        if new_note != mr.get("備註",""):  changed["備註"] = new_note
+        if changed:
+            with st.spinner("更新中..."):
+                ok = update_master_fields(sel_master, changed)
+            if ok:
+                st.success(f"✅ 主單已更新：{', '.join(changed.keys())}")
+                st.cache_data.clear(); st.rerun()
+            else:
+                st.error("❌ 更新失敗，請重新整理後再試")
+        else:
+            st.info("沒有偵測到變更。")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
