@@ -336,7 +336,7 @@ else:
         column_config={
             "✅選取":      st.column_config.CheckboxColumn("選取",       width=55),
             "子件編號":    st.column_config.TextColumn("子件編號",       width=170, disabled=True),
-            "馬達序號":    st.column_config.TextColumn("S/N",           width=100, disabled=True),
+            "馬達序號":    st.column_config.TextColumn("S/N",           width=120),
             "產品型號":    st.column_config.TextColumn("型號",           width=140, disabled=True),
             "故障類別":    st.column_config.SelectboxColumn("故障類別",    width=120, options=_fault_opts),
             "維修類型":    st.column_config.SelectboxColumn("維修需求",   width=130, options=_repair_opts),
@@ -367,7 +367,7 @@ else:
                     orig = orig.iloc[0]
                     changes = {
                         col: str(row[col])
-                        for col in ["故障類別","維修類型","維修狀態","技術判定","維修方式","維修成本評估","是否報廢","備註"]
+                        for col in ["馬達序號","故障類別","維修類型","維修狀態","技術判定","維修方式","維修成本評估","是否報廢","備註"]
                         if col in row.index and str(row[col]) != str(orig.get(col,""))
                     }
                     if changes:
