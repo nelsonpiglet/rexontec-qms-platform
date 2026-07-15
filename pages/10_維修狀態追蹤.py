@@ -602,13 +602,14 @@ with _skip1:
     s1_skip = st.checkbox("不檢驗", value=_b("S1-略過"), key=f"s1sk_{det_rma}")
 
 if not s1_skip:
-    c1a, c1b, c1c, c1d = st.columns(4)
+    c1a, c1b, c1c, c1d, c1e = st.columns(5)
     with c1a: s1_shell = st.checkbox("外殼撞傷", value=_b("S1-外殼撞傷"), key=f"s1sh_{det_rma}")
     with c1b: s1_axis  = st.checkbox("軸心歪斜", value=_b("S1-軸心歪斜"), key=f"s1ax_{det_rma}")
     with c1c: s1_sand  = st.checkbox("沙土侵入", value=_b("S1-沙土侵入"), key=f"s1sd_{det_rma}")
     with c1d: s1_screw = st.checkbox("螺絲裂痕", value=_b("S1-螺絲裂痕"), key=f"s1sc_{det_rma}")
-    _c1e1, _c1e2, _c1e3, _c1e4 = st.columns(4)
-    with _c1e1: s1_ok = st.checkbox("正常", value=_b("S1-正常"), key=f"s1ok_{det_rma}")
+    with c1e: s1_burn  = st.checkbox("線圈燒毀", value=_b("S1-線圈燒毀"), key=f"s1br_{det_rma}")
+    _c1f1, _c1f2, _c1f3, _c1f4, _c1f5 = st.columns(5)
+    with _c1f1: s1_ok = st.checkbox("正常", value=_b("S1-正常"), key=f"s1ok_{det_rma}")
     _s1_cust_vals = _render_custom("S1", _s1_custom, det_rma)
 
     # 人為撞擊提前終止
@@ -637,7 +638,7 @@ if not s1_skip:
         st.session_state.pop(_et_stop_key, None)
         st.session_state.pop(_et_scrap_key, None)
 else:
-    s1_shell = s1_axis = s1_sand = s1_screw = s1_ok = False
+    s1_shell = s1_axis = s1_sand = s1_screw = s1_burn = s1_ok = False
     _s1_cust_vals = {}
     st.session_state.pop(_et_stop_key, None)
     st.session_state.pop(_et_scrap_key, None)
@@ -786,6 +787,7 @@ if save_det:
         "S1-軸心歪斜": "是" if s1_axis  else "否",
         "S1-沙土侵入": "是" if s1_sand  else "否",
         "S1-螺絲裂痕": "是" if s1_screw else "否",
+        "S1-線圈燒毀": "是" if s1_burn  else "否",
         "S1-正常":     "是" if s1_ok    else "否",
         "S2-略過":     "是" if s2_skip    else "否",
         "S2-異音":     "是" if s2_noise   else "否",
