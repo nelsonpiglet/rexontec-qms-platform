@@ -432,6 +432,36 @@ else:
             else:
                 st.info("沒有偵測到變更。")
 
+    # ── S/N 修正（獨立表單，避免 data_editor 雙擊編輯不熟悉） ──
+    with st.expander("✏️ 修正 S/N 馬達序號", expanded=False):
+        sn_opts = sub_df["子件編號"].tolist() if not sub_df.empty else []
+        if sn_opts:
+            with st.form("sn_fix_form"):
+                sn_target = st.selectbox(
+                    "選擇子件",
+                    sn_opts,
+                    format_func=lambda d: (
+                        f"{d}  ―  現行 S/N：{sub_df[sub_df['子件編號']==d]['馬達序號'].values[0]}"
+                        if not sub_df[sub_df['子件編號']==d].empty else d
+                    ),
+                )
+                _cur_sn = sub_df[sub_df["子件編號"] == sn_target]["馬達序號"].values[0] \
+                          if not sub_df[sub_df["子件編號"] == sn_target].empty else ""
+                new_sn = st.text_input("輸入新的 S/N", value=str(_cur_sn or ""))
+                save_sn = st.form_submit_button("💾 儲存 S/N", type="primary")
+            if save_sn:
+                if not new_sn.strip():
+                    st.warning("S/N 不能為空。")
+                elif new_sn.strip() == str(_cur_sn or "").strip():
+                    st.info("S/N 未變更。")
+                else:
+                    ok = multi_update_details({sn_target: {"馬達序號": new_sn.strip()}})
+                    if ok:
+                        st.success(f"✅ {sn_target} S/N 已更新為 {new_sn.strip()}")
+                        st.cache_data.clear(); st.rerun()
+                    else:
+                        st.error("更新失敗，請稍後再試。")
+
     # ── 批次套用（對勾選列） ──
     checked_ids = edited_sub[edited_sub["✅選取"] == True]["子件編號"].tolist()
 

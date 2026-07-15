@@ -702,11 +702,12 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
             ("是否報廢", det.get("是否報廢","否")),
         ], alt=True)
 
-        # 技術檢測：Step1、Step2、Step3 only
+        # 技術檢測：Step1、Step2、Step3、Step4
         _has = any(str(det.get(k,"")).strip() for k in [
             "S1-外殼撞傷","S1-軸心歪斜","S1-沙土侵入","S1-螺絲裂痕",
             "S2-異音","S2-卡頓","S2-軸承鬆動",
-            "S3-AB阻值","S3-BC阻值","S3-CA阻值"])
+            "S3-AB阻值","S3-BC阻值","S3-CA阻值",
+            "S4-高震動","S4-高溫","S4-無法啟動","S4-正常"])
         if _has:
             pdf.section_title("", "技術檢測", "")
             pdf.detect_row(
@@ -735,7 +736,15 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
                 _ab, _bc, _ca,
                 str(det.get("S3-線圈異常","否")) == "是",
                 alt=True)
-        # ── 不輸出 Step4、Step5、最終判定、保固判定、維修方式、是否報廢 ──
+            pdf.detect_row(
+                "Step4 通電",
+                [("高震動",   det.get("S4-高震動","否")),
+                 ("高溫",     det.get("S4-高溫","否")),
+                 ("無法啟動", det.get("S4-無法啟動","否")),
+                 ("異音",     det.get("S4-異音","否")),
+                 ("正常",     det.get("S4-正常","否"))],
+                alt=False)
+        # ── 不輸出 Step5、最終判定、保固判定、維修方式、是否報廢 ──
 
     # ── 不輸出簽核欄 ────────────────────────────────────────────────────────
 
