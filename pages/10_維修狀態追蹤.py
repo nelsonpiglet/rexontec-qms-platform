@@ -436,28 +436,33 @@ else:
     with st.expander("✏️ 修正 S/N 馬達序號", expanded=False):
         sn_opts = sub_df["子件編號"].tolist() if not sub_df.empty else []
         if sn_opts:
-            with st.form("sn_fix_form"):
-                sn_target = st.selectbox(
-                    "選擇子件",
-                    sn_opts,
-                    format_func=lambda d: (
-                        f"{d}  ―  現行 S/N：{sub_df[sub_df['子件編號']==d]['馬達序號'].values[0]}"
-                        if not sub_df[sub_df['子件編號']==d].empty else d
-                    ),
-                )
-                _cur_sn = sub_df[sub_df["子件編號"] == sn_target]["馬達序號"].values[0] \
-                          if not sub_df[sub_df["子件編號"] == sn_target].empty else ""
-                new_sn = st.text_input("輸入新的 S/N", value=str(_cur_sn or ""))
-                save_sn = st.form_submit_button("💾 儲存 S/N", type="primary")
-            if save_sn:
+            sn_target = st.selectbox(
+                "選擇要修正的子件",
+                sn_opts,
+                format_func=lambda d: (
+                    f"{d}  ―  現行 S/N：{sub_df[sub_df['子件編號']==d]['馬達序號'].values[0]}"
+                    if not sub_df[sub_df['子件編號']==d].empty else d
+                ),
+                key="sn_fix_select",
+            )
+            _cur_sn = str(sub_df[sub_df["子件編號"] == sn_target]["馬達序號"].values[0] or "") \
+                      if not sub_df[sub_df["子件編號"] == sn_target].empty else ""
+            st.markdown(
+                f'<div style="font-size:12px;color:var(--muted);margin:4px 0 8px">'
+                f'目前 S/N：<b style="color:#c0392b">{_cur_sn or "（空）"}</b></div>',
+                unsafe_allow_html=True)
+            new_sn = st.text_input("輸入正確的新 S/N（直接輸入，勿保留舊值）",
+                                   value="", key="sn_fix_input",
+                                   placeholder="例如：25400000028")
+            if st.button("💾 儲存 S/N", type="primary", key="sn_fix_save"):
                 if not new_sn.strip():
-                    st.warning("S/N 不能為空。")
-                elif new_sn.strip() == str(_cur_sn or "").strip():
-                    st.info("S/N 未變更。")
+                    st.warning("請輸入新的 S/N。")
+                elif new_sn.strip() == _cur_sn.strip():
+                    st.info("輸入的 S/N 與現行相同，未執行更新。")
                 else:
                     ok = multi_update_details({sn_target: {"馬達序號": new_sn.strip()}})
                     if ok:
-                        st.success(f"✅ {sn_target} S/N 已更新為 {new_sn.strip()}")
+                        st.success(f"✅ {sn_target} S/N 已更新：{_cur_sn} → {new_sn.strip()}")
                         st.cache_data.clear(); st.rerun()
                     else:
                         st.error("更新失敗，請稍後再試。")
