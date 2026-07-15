@@ -393,6 +393,7 @@ else:
         hide_index=True,
         key=f"sub_editor_{sel_master}",
     )
+    st.caption("💡 S/N、故障類別、狀態等欄位均可直接點擊修改，完成後按「儲存子件修改」存檔")
 
     # ── 儲存單列修改 ──
     sv_col, _ = st.columns([2, 5])
@@ -410,9 +411,9 @@ else:
                     if orig.empty: continue
                     orig = orig.iloc[0]
                     changes = {
-                        col: str(row[col])
+                        col: str(row[col]).strip()
                         for col in ["馬達序號","故障類別","維修類型","維修狀態","技術判定","維修方式","維修成本評估","是否報廢","備註"]
-                        if col in row.index and str(row[col]) != str(orig.get(col,""))
+                        if col in row.index and str(row[col]).strip() != str(orig.get(col,"")).strip()
                     }
                     if changes:
                         all_changes[did] = changes
