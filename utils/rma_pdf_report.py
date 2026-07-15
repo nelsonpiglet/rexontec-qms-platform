@@ -1,6 +1,7 @@
 """
 REXONTEC 力科 — 維修報告 PDF 產生器
 使用 fpdf2 + 微軟正黑體（Windows 系統字型）
+v2.1 — generate_batch_repair_pdf 改為接受 list[dict] 單一參數
 """
 import io
 import os
