@@ -84,10 +84,10 @@ st.markdown("""
 
 report_mode = st.radio(
     "報告類型",
-    ["📄 單顆報告（選擇特定 SN）", "📦 批次報告（選擇主單，輸出全部馬達）"],
+    ["📄 單顆報告（選擇特定 SN）", "📋 合併報告（可選多張主單合併輸出）"],
     horizontal=True, label_visibility="collapsed",
 )
-is_batch_report = report_mode.startswith("📦")
+is_batch_report = report_mode.startswith("📋")
 
 
 # ── 篩選 ─────────────────────────────────────
@@ -106,7 +106,7 @@ with sc2:
     cust_f     = st.selectbox("客戶篩選", cust_opts, label_visibility="collapsed")
 
 if is_batch_report:
-    # 選主單
+    # ── 選多張主單 ───────────────────────────────────────────────────────────
     view_m = masters_df.copy()
     if kw:
         msk = (view_m["主單編號"].astype(str).str.contains(kw, case=False, na=False) |
@@ -119,75 +119,90 @@ if is_batch_report:
         st.warning("沒有符合條件的主單。")
         st.stop()
 
-    sel_master = st.selectbox(
-        "選擇主單",
+    def _master_label(m):
+        row = masters_df[masters_df["主單編號"] == m]
+        cust = row["客戶公司"].values[0] if not row.empty else ""
+        qty  = row["退修數量"].values[0]  if not row.empty else "?"
+        return f"{m}  ―  {cust}  |  {qty} 顆"
+
+    sel_masters = st.multiselect(
+        "選擇主單（可多選，合併成同一張報告）",
         view_m["主單編號"].tolist(),
-        format_func=lambda m: (
-            f"{m}  ―  {masters_df[masters_df['主單編號']==m]['客戶公司'].values[0] if not masters_df[masters_df['主單編號']==m].empty else ''}"
-            f"  |  {masters_df[masters_df['主單編號']==m]['退修數量'].values[0] if not masters_df[masters_df['主單編號']==m].empty else '?'} 顆"
-        ),
+        format_func=_master_label,
+        placeholder="點選選擇一張或多張主單…",
         label_visibility="collapsed",
     )
-    mr_row = masters_df[masters_df["主單編號"] == sel_master]
-    if mr_row.empty:
-        st.warning("找不到該主單。")
-        st.stop()
-    mr = mr_row.iloc[0].to_dict()
 
-    # 子件列表
-    sub = details_df[details_df["主單編號"] == sel_master] if not details_df.empty else pd.DataFrame()
+    if not sel_masters:
+        st.info("請至少選擇一張主單以產生報告。")
+        st.stop()
 
     def pf(label, value, color="var(--text)"):
         return (f'<div class="preview-row"><span class="preview-label">{label}</span>'
                 f'<span class="preview-val" style="color:{color}">{value or "—"}</span></div>')
 
-    st.markdown(f"""
+    # 預覽所選主單
+    st.markdown("""
     <div class="card" style="margin-top:8px"><div class="card-header"><div class="card-title">
-      <span class="card-dot" style="background:var(--orange)"></span>主單資料預覽
+      <span class="card-dot" style="background:var(--orange)"></span>已選主單預覽
     </div></div></div>""", unsafe_allow_html=True)
 
-    p1, p2 = st.columns(2)
-    with p1:
-        st.markdown(
-            pf("主單編號", mr.get("主單編號",""), "var(--accent)") +
-            pf("客戶公司", mr.get("客戶公司","")) +
-            pf("聯絡人",   mr.get("聯絡人","")) +
-            pf("聯絡電話", mr.get("聯絡電話","")),
-            unsafe_allow_html=True)
-    with p2:
-        st.markdown(
-            pf("收件日期", str(mr.get("收件日期",""))[:16]) +
-            pf("退修數量", f"{mr.get('退修數量','')} 顆") +
-            pf("維修類型", mr.get("維修類型","")) +
-            pf("優先等級", mr.get("優先等級","")),
-            unsafe_allow_html=True)
+    all_subs = []
+    total_motors = 0
+    for mid_sel in sel_masters:
+        mr_row = masters_df[masters_df["主單編號"] == mid_sel]
+        if mr_row.empty:
+            continue
+        mr_info = mr_row.iloc[0].to_dict()
+        sub_df  = (details_df[details_df["主單編號"] == mid_sel]
+                   if not details_df.empty else pd.DataFrame())
+        all_subs.append({"master": mr_info, "details": sub_df})
+        total_motors += len(sub_df)
 
-    if not sub.empty:
-        st.markdown(f"""
-        <div style="font-size:12px;color:var(--muted);margin:8px 0 4px">
-          子件列表（共 {len(sub)} 顆）：
-        </div>""", unsafe_allow_html=True)
-        sub_show = sub[[c for c in ["子件編號","馬達序號","產品型號","故障類別","維修狀態","技術判定","維修方式"]
-                        if c in sub.columns]].copy()
-        st.dataframe(sub_show, use_container_width=True, hide_index=True,
-                     height=min(350, 56 + len(sub_show)*38))
+        with st.expander(f"📦 {mid_sel}  ({len(sub_df)} 顆馬達)", expanded=len(sel_masters) == 1):
+            p1, p2 = st.columns(2)
+            with p1:
+                st.markdown(
+                    pf("客戶公司", mr_info.get("客戶公司","")) +
+                    pf("聯絡人",   mr_info.get("聯絡人","")) +
+                    pf("收件日期", str(mr_info.get("收件日期",""))[:16]),
+                    unsafe_allow_html=True)
+            with p2:
+                st.markdown(
+                    pf("退修數量", f"{mr_info.get('退修數量','')} 顆") +
+                    pf("維修類型", mr_info.get("維修類型","")) +
+                    pf("優先等級", mr_info.get("優先等級","")),
+                    unsafe_allow_html=True)
+            if not sub_df.empty:
+                sub_show = sub_df[[c for c in ["子件編號","馬達序號","產品型號","故障類別","技術判定","是否報廢"]
+                                   if c in sub_df.columns]].copy()
+                st.dataframe(sub_show, use_container_width=True, hide_index=True,
+                             height=min(300, 56 + len(sub_show)*38))
 
-    # ── 批次 PDF 按鈕 ──
+    # ── 產生合併 PDF 按鈕 ──
     st.markdown("<br>", unsafe_allow_html=True)
     _, mid_col, _ = st.columns([1, 2, 1])
     with mid_col:
-        gen_batch = st.button("📦　產生批次 PDF 維修報告", use_container_width=True, type="primary")
+        gen_batch = st.button(
+            f"📋　產生檢測維修報告（共 {total_motors} 顆馬達）",
+            use_container_width=True, type="primary",
+            disabled=(total_motors == 0),
+        )
 
     if gen_batch:
-        if sub.empty:
-            st.error("此主單沒有子件資料，無法產生報告。")
+        if total_motors == 0:
+            st.error("選取的主單沒有子件資料，無法產生報告。")
         else:
-            with st.spinner(f"產生 {len(sub)} 顆馬達報告中，請稍候..."):
+            with st.spinner(f"產生 {total_motors} 顆馬達報告中，請稍候..."):
                 try:
-                    details_list = sub.to_dict("records")
-                    pdf_bytes = generate_batch_repair_pdf(mr, details_list)
-                    fname = f"批次報告_{sel_master}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-                    st.success(f"✅ 批次 PDF 已產生！共 {len(sub)} 顆馬達")
+                    masters_data = [
+                        {"master": md["master"], "details": md["details"].to_dict("records")}
+                        for md in all_subs
+                    ]
+                    pdf_bytes = generate_batch_repair_pdf(masters_data)
+                    ids_str = "_".join(sel_masters[:3]) + ("_more" if len(sel_masters) > 3 else "")
+                    fname = f"檢測報告_{ids_str}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+                    st.success(f"✅ 檢測維修報告已產生！共 {total_motors} 顆馬達、{len(sel_masters)} 張主單")
                     _, dl_col, _ = st.columns([1, 2, 1])
                     with dl_col:
                         st.download_button(
@@ -198,8 +213,8 @@ if is_batch_report:
                     st.markdown(
                         f'<p style="font-size:11px;color:var(--muted);text-align:center">'
                         f'檔案大小：{size_kb:.1f} KB &nbsp;|&nbsp; '
-                        f'主單：{sel_master} &nbsp;|&nbsp; '
-                        f'馬達：{len(sub)} 顆</p>', unsafe_allow_html=True)
+                        f'主單：{len(sel_masters)} 張 &nbsp;|&nbsp; '
+                        f'馬達：{total_motors} 顆</p>', unsafe_allow_html=True)
                 except Exception as ex:
                     st.error(f"❌ PDF 產生失敗：{ex}")
                     st.exception(ex)
