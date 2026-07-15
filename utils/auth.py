@@ -81,9 +81,9 @@ def _load() -> dict:
     讀取使用者資料。
     優先序：
       1. 模組快取（30 秒 TTL，避免頻繁打 API）
-      2. Google Sheets Config["users"]（跨部署持久）
-      3. 本地 config/users.json（開發環境 / 初次啟動備援）
-    若 GSheets 空但本地有資料 → 自動遷移至 GSheets。
+      2. Google Sheets Config["users"]（跨部署持久，含重試）
+      3. 本地 config/users.json（開發環境 / GSheets 完全無法連線時的唯讀備援）
+    注意：備援路徑「不」寫回 GSheets，避免用舊版本覆蓋雲端資料。
     """
     global _cache_data, _cache_ts
     _startup_sync()   # 確保本地帳號已同步至 GSheets
@@ -91,20 +91,27 @@ def _load() -> dict:
     if _cache_data is not None and (now - _cache_ts) < _CACHE_TTL:
         return _cache_data
 
-    # ── 嘗試 Google Sheets ───────────────────────
+    # ── 嘗試 Google Sheets（最多重試 3 次）────────
     gs_data = None
-    try:
-        from utils.gsheet import get_config_json
-        gs_data = get_config_json("users")
-    except Exception:
-        pass
+    for _attempt in range(3):
+        try:
+            from utils.gsheet import get_config_json
+            gs_data = get_config_json("users")
+            if gs_data is not None:
+                break
+        except Exception:
+            pass
+        if _attempt < 2:
+            time.sleep(2 ** _attempt)
 
     if gs_data is not None:
         _cache_data = gs_data
         _cache_ts   = now
         return _cache_data
 
-    # ── 備援：讀本地 JSON ────────────────────────
+    # ── 備援：讀本地 JSON（唯讀，不覆寫 GSheets）──
+    # 注意：若 GSheets 只是暫時無法連線，此分支會讀到舊版本；
+    #       但絕對不寫回，以避免 redeploy 後用初始帳號清空雲端資料。
     try:
         with open(USERS_PATH, 'r', encoding='utf-8') as f:
             local_data = json.load(f)
@@ -112,14 +119,6 @@ def _load() -> dict:
         local_data = {"users": []}
     except Exception:
         local_data = {"users": []}
-
-    # ── 自動遷移：本地有資料但 GSheets 尚無記錄 ──
-    if local_data.get("users"):
-        try:
-            from utils.gsheet import set_config_json
-            set_config_json("users", local_data)
-        except Exception:
-            pass
 
     _cache_data = local_data
     _cache_ts   = now
