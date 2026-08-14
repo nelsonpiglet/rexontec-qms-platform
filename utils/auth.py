@@ -60,6 +60,15 @@ def _startup_sync():
             if u["username"] not in gs_names:
                 gs.setdefault("users", []).append(u)
                 added = True
+            else:
+                # 若本地密碼與 GSheets 不同，以本地為準更新（密碼重設機制）
+                for gs_u in gs["users"]:
+                    if gs_u["username"] == u["username"]:
+                        if gs_u.get("password_hash") != u.get("password_hash"):
+                            gs_u["password_hash"] = u["password_hash"]
+                            gs_u["salt"]          = u["salt"]
+                            added = True
+                        break
         # 同步 auto_login_admin（以 git 版本為權威來源，含空字串）
         if "auto_login_admin" in local and local.get("auto_login_admin") != gs.get("auto_login_admin"):
             gs["auto_login_admin"] = local.get("auto_login_admin", "")

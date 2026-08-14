@@ -3,8 +3,8 @@
     {
       "username": "Nelson_tsai",
       "display_name": "蔡承叡",
-      "password_hash": "621167010ed9c8fee160973057e9188b5ca772ed85c320421fa49b1b6446be10",
-      "salt": "bd9871f2bd97a49b599a9aa3a4bf966f",
+      "password_hash": "77b40edbfe0b856cf76e2da7311b6337f7b05005156822d709a54605ba086007",
+      "salt": "85736a1658105b4ece07f2be9136a761",
       "role": "admin",
       "status": "active",
       "created_at": "2026-05-21 15:46",
