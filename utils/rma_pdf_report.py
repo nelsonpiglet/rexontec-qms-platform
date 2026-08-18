@@ -604,10 +604,14 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
     pdf.ln(4)
 
     # ── 一、客戶資訊 ────────────────────────────────────────────────────────
+    unrepairable_cnt = sum(
+        1 for it in all_items
+        if str(it["det"].get("是否可維修","")).strip() == "不可維修"
+    )
     pdf.section_title("一", "客戶資訊", "Customer Information")
     pdf.data_row([
         ("客戶公司", first_m.get("客戶公司","")),
-        ("聯絡人",   first_m.get("聯絡人","")),
+        ("無法維修", f"{unrepairable_cnt} 顆"),
     ], alt=True)
     pdf.data_row([
         ("馬達總數", f"{len(all_items)} 顆"),
@@ -618,8 +622,8 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
     # ── 二、馬達清單摘要 ────────────────────────────────────────────────────
     pdf.section_title("二", "馬達清單摘要", "Motor Summary")
 
-    COL_W = [10, 32, 30, 60, 46]   # 序 | S/N | 故障類別 | NG項目 | 備註 → 合計 178
-    HDR   = ["序", "S/N", "故障類別", "技術判定 / NG 項目", "備註"]
+    COL_W = [10, 28, 26, 50, 24, 40]   # 序|S/N|故障類別|NG項目|是否可維修|備註 → 合計178
+    HDR   = ["序", "S/N", "故障類別", "技術判定 / NG 項目", "是否可維修", "備註"]
 
     pdf.set_fill_color(*C_NAVY)
     pdf.set_text_color(*C_WHITE)
@@ -639,6 +643,7 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
         master = item["master"]
         ng     = _get_ng_items(det)
         ng_txt = ", ".join(ng) if ng else "—"
+        repairable = str(det.get("是否可維修","") or "—")
         remark = str(master.get("備註","") or "")
 
         alt = (i % 2 == 1)
@@ -647,12 +652,14 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
         pdf.rect(MARGIN, y1, CONTENT_W, 7, style="F")
         pdf.hline(y1, lw=0.15)
         x = MARGIN
+        rep_clr = C_RED if repairable == "不可維修" else (C_GREEN if repairable == "可維修" else C_MUTED)
         row_data = [
             (str(i + 1),                          C_TEXT),
             (str(det.get("馬達序號","")),           C_TEXT),
             (str(det.get("故障類別",""))[:10],      C_TEXT),
-            (ng_txt[:30],                          C_RED if ng else C_MUTED),
-            (remark[:22],                          C_TEXT),
+            (ng_txt[:28],                          C_RED if ng else C_MUTED),
+            (repairable,                           rep_clr),
+            (remark[:20],                          C_TEXT),
         ]
         for w, (txt, clr) in zip(COL_W, row_data):
             pdf.set_xy(x + 1, y1 + 1.2)
@@ -696,10 +703,10 @@ def generate_batch_repair_pdf(masters_details: list) -> bytes:
         pdf.set_y(y_hd + 10)
         pdf.set_text_color(*C_TEXT)
 
-        # 故障類別 | 是否報廢（取代維修狀態）
+        # 故障類別 | 是否可維修
         pdf.data_row([
             ("故障類別", det.get("故障類別","")),
-            ("是否報廢", det.get("是否報廢","否")),
+            ("是否可維修", det.get("是否可維修","—")),
         ], alt=True)
 
         # 技術檢測：Step1、Step2、Step3、Step4
