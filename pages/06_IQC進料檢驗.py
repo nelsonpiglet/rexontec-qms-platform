@@ -604,7 +604,10 @@ with right_col:
             hdr_qty    = st.number_input("進料數量 (PCS)", min_value=0, value=0, key="iqc_hdr_qty")
             hdr_sample = st.number_input("抽樣數量 (PCS)", min_value=0, value=0, key="iqc_hdr_sample")
         with c4:
-            hdr_date   = st.date_input("檢驗日期", value=date.today(), key="iqc_hdr_date")
+            hdr_date   = st.date_input("檢驗日期", value=date.today(),
+                                       min_value=date(date.today().year, 1, 1),
+                                       max_value=date(date.today().year, 12, 31),
+                                       key="iqc_hdr_date")
             hdr_insp   = st.text_input("IQC 檢驗員", placeholder="姓名", key="iqc_hdr_insp")
 
         # 公司別選擇
