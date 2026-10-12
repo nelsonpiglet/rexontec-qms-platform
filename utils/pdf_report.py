@@ -323,11 +323,21 @@ def generate_pdf(
     #  固定欄：No(14) Grade(14) 項目名稱(68) 規格標準(62) 工具(24) = 182mm + units
     fixed_w = [14*mm, 14*mm, 68*mm, 62*mm, 24*mm]
     fixed_total = sum(fixed_w)
-    unit_w_each = max(15*mm, (avail_w - fixed_total) / max(n_units, 1))
-    # 若 unit 欄仍太窄（理論上橫向不會發生），縮短規格欄
-    if unit_w_each < 13*mm:
-        fixed_w[3] = max(40*mm, avail_w - fixed_total + fixed_w[3] - n_units * 13*mm)
-        unit_w_each = max(13*mm, (avail_w - sum(fixed_w)) / n_units)
+    unit_w_each = (avail_w - fixed_total) / max(n_units, 1)
+
+    # 若 unit 欄不足 13mm（SN 標頭最小可讀寬度），依序縮減固定欄以騰出空間
+    if unit_w_each < 13 * mm:
+        _deficit = 13 * mm * n_units - (avail_w - fixed_total)
+        # 1. 規格標準欄：62mm → 最小 36mm
+        _s = min(_deficit, fixed_w[3] - 36 * mm)
+        fixed_w[3] -= _s
+        _deficit -= _s
+        # 2. 項目名稱欄：68mm → 最小 46mm
+        if _deficit > 0:
+            _s = min(_deficit, fixed_w[2] - 46 * mm)
+            fixed_w[2] -= _s
+        fixed_total = sum(fixed_w)
+        unit_w_each = (avail_w - fixed_total) / max(n_units, 1)
 
     col_widths = fixed_w + [unit_w_each] * n_units
 
