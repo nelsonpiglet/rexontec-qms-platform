@@ -3,6 +3,7 @@
 # ══════════════════════════════════════════════════════
 
 # ── 敏感資料 / 金鑰（絕對不上傳）───────────────────
+config/users.json
 service_account.json
 *service_account*.json
 *service_account*.txt

@@ -35,54 +35,13 @@ def _hash_pw(password: str, salt: str = None) -> tuple:
 def _startup_sync():
     """
     每個 server process 啟動後執行一次。
-    把 config/users.json（git 版本）裡的帳號「合併」進 Google Sheets，
-    確保即使 GSheets 因 API 錯誤漏存，redeploy 後仍能從 git 版本恢復。
+    【資安修正 2026-11-18】已移除「以 git 版本密碼覆寫線上密碼」邏輯。
+    密碼異動只能透過 UI 的「變更密碼」功能或管理員後台操作，不可由 git 版本覆寫。
     """
     global _startup_synced
     if _startup_synced:
         return
     _startup_synced = True
-    try:
-        with open(USERS_PATH, 'r', encoding='utf-8') as f:
-            local = json.load(f)
-        if not local.get("users"):
-            return
-        from utils.gsheet import get_config_json, set_config_json
-        gs_raw = get_config_json("users")
-        # gs_raw is None = API 錯誤或 key 不存在；兩者都不能安全覆寫 GSheets
-        # 第一次啟動（key 不存在）由 _load() 的自動遷移邏輯負責
-        if gs_raw is None:
-            return
-        gs = gs_raw if gs_raw else {"users": []}
-        gs_names = {u["username"] for u in gs.get("users", [])}
-        added = False
-        for u in local["users"]:
-            if u["username"] not in gs_names:
-                gs.setdefault("users", []).append(u)
-                added = True
-            else:
-                # 若本地密碼與 GSheets 不同，以本地為準更新（密碼重設機制）
-                for gs_u in gs["users"]:
-                    if gs_u["username"] == u["username"]:
-                        if gs_u.get("password_hash") != u.get("password_hash"):
-                            gs_u["password_hash"] = u["password_hash"]
-                            gs_u["salt"]          = u["salt"]
-                            added = True
-                        break
-        # 同步 auto_login_admin（以 git 版本為權威來源，含空字串）
-        if "auto_login_admin" in local and local.get("auto_login_admin") != gs.get("auto_login_admin"):
-            gs["auto_login_admin"] = local.get("auto_login_admin", "")
-            added = True
-        if added:
-            for _a in range(3):
-                try:
-                    set_config_json("users", gs)
-                    break
-                except Exception:
-                    if _a < 2:
-                        time.sleep(2 ** _a)
-    except Exception:
-        pass
 
 
 def _load() -> dict:
