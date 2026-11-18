@@ -8,6 +8,9 @@ from datetime import datetime, timezone
 
 st.set_page_config(page_title="連線診斷", page_icon="🔧", layout="wide")
 
+from utils.auth import require_login
+require_login(admin_only=True)
+
 st.title("🔧 Google Sheets 連線診斷")
 st.caption("此頁面用於排查 Streamlit Cloud 連線問題，確認無誤後可移除")
 st.divider()
@@ -112,8 +115,8 @@ try:
     client = gspread.authorize(creds)
     st.success("✅ gspread client 建立成功")
 
-    SPREADSHEET_ID = "1OksPtvaabwXIMdO8gPA7A6s6oHpLy_Liewcc_pyOmA8"
-    ss = client.open_by_key(SPREADSHEET_ID)
+    from utils.rma_gsheet import get_rma_sheet_id
+    ss = client.open_by_key(get_rma_sheet_id())
     sheets = [ws.title for ws in ss.worksheets()]
     st.success(f"✅ Google Sheet 開啟成功！工作表：{sheets}")
 except Exception as e:

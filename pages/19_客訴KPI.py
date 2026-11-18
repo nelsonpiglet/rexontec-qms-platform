@@ -16,6 +16,9 @@ st.set_page_config(
 )
 st.markdown(QMS_CSS, unsafe_allow_html=True)
 st.markdown(topbar(), unsafe_allow_html=True)
+from utils.auth import require_login, user_info_bar
+require_login()
+user_info_bar()
 
 # ── 導覽列 ────────────────────────────────────────────
 c0, c1, c2, c3, c4, c5, c6, _ = st.columns([1,1,1,1,1,1,1,2])

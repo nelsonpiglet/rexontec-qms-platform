@@ -10,9 +10,12 @@ from google.oauth2.service_account import Credentials
 from datetime import datetime
 import json
 
-# ── 請填入你的 Google Sheet ID ──────────────────────
-SPREADSHEET_ID = "1JU9nhimkhEMYeu1hzQGutpg1EmnmRMbzTxCevjMxYwU"
-# ────────────────────────────────────────────────────
+def _get_sheet_id() -> str:
+    """從 st.secrets 讀取 OQC 試算表 ID，確保 ID 不寫死於程式碼。"""
+    try:
+        return st.secrets["sheets"]["oqc_sheet_id"]
+    except Exception:
+        return ""
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -83,7 +86,7 @@ def _open_sheet(sheet_name: str, columns: list):
     若已存在但欄數不足（因欄位定義增加），自動擴欄。
     """
     client = get_client()
-    ss     = client.open_by_key(SPREADSHEET_ID)
+    ss     = client.open_by_key(_get_sheet_id())
     titles = [ws.title for ws in ss.worksheets()]
     need_cols = len(columns) + 2          # 保留 2 欄緩衝
     if sheet_name not in titles:

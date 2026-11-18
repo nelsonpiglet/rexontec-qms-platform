@@ -10,7 +10,13 @@ import pandas as pd
 
 # ── 使用與維修系統同一試算表（不同工作表）──────────
 # 若需獨立試算表，請建立新的 Google Sheet 並更換此 ID
-SPREADSHEET_ID = "1OksPtvaabwXIMdO8gPA7A6s6oHpLy_Liewcc_pyOmA8"
+def _get_sheet_id() -> str:
+    """從 st.secrets 讀取 RMA/客訴 試算表 ID，確保 ID 不寫死於程式碼。"""
+    try:
+        return st.secrets["sheets"]["rma_sheet_id"]
+    except Exception:
+        return ""
+
 CS_SHEET_NAME  = "客訴清單"
 D8_SHEET_NAME  = "8D記錄"
 
@@ -66,7 +72,7 @@ def get_client():
 
 def _get_or_create_sheet(sheet_name: str, columns: list):
     client = get_client()
-    ss     = client.open_by_key(SPREADSHEET_ID)
+    ss     = client.open_by_key(_get_sheet_id())
     titles = [ws.title for ws in ss.worksheets()]
     if sheet_name in titles:
         ws = ss.worksheet(sheet_name)

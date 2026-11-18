@@ -255,6 +255,15 @@ def require_login(admin_only: bool = False):
     - 其他使用者 → 顯示登入畫面
     admin_only=True 且非 admin → 顯示禁止畫面
     """
+    # 未登入時隱藏 Streamlit 預設側邊欄導覽，防止頁面清單外洩
+    if not st.session_state.get("oqc_logged_in", False):
+        st.markdown(
+            '<style>[data-testid="stSidebarNav"],'
+            '[data-testid="stSidebarNavItems"]'
+            '{display:none!important;visibility:hidden!important}</style>',
+            unsafe_allow_html=True,
+        )
+
     if not has_admin():
         _ui_first_run()
         st.stop()

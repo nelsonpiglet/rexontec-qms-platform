@@ -7,7 +7,14 @@ import streamlit as st
 from google.oauth2.service_account import Credentials
 from datetime import datetime
 
-SPREADSHEET_ID = "1OksPtvaabwXIMdO8gPA7A6s6oHpLy_Liewcc_pyOmA8"
+def get_rma_sheet_id() -> str:
+    """從 st.secrets 讀取 RMA 試算表 ID，確保 ID 不寫死於程式碼。
+    供 rma_master_gsheet / rma_detail_gsheet 共用。"""
+    try:
+        return st.secrets["sheets"]["rma_sheet_id"]
+    except Exception:
+        return ""
+
 SHEET_NAME     = "返廠清單"
 
 SCOPES = [
@@ -48,7 +55,7 @@ def get_client():
 
 def get_sheet():
     client    = get_client()
-    ss        = client.open_by_key(SPREADSHEET_ID)
+    ss        = client.open_by_key(get_rma_sheet_id())
     titles    = [ws.title for ws in ss.worksheets()]
     need_cols = len(COLUMNS) + 5          # 多 5 欄緩衝，未來擴欄不用改
     if SHEET_NAME in titles:

@@ -16,6 +16,9 @@ st.set_page_config(
 )
 st.markdown(QMS_CSS, unsafe_allow_html=True)
 st.markdown(topbar(), unsafe_allow_html=True)
+from utils.auth import require_login, user_info_bar
+require_login()
+user_info_bar()
 
 # ── 導覽列 ────────────────────────────────────
 def _nav():

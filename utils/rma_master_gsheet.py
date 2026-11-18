@@ -5,7 +5,6 @@ REXONTEC 力科 — 維修保養系統 Google Sheet 連線工具
 from __future__ import annotations
 from datetime import datetime
 
-SPREADSHEET_ID    = "1OksPtvaabwXIMdO8gPA7A6s6oHpLy_Liewcc_pyOmA8"
 MASTER_SHEET_NAME = "返廠主單"
 
 MASTER_COLUMNS = [
@@ -40,7 +39,8 @@ def _client(fresh: bool = False):
 
 
 def _open_master_sheet_once():
-    ss     = _client().open_by_key(SPREADSHEET_ID)
+    from utils.rma_gsheet import get_rma_sheet_id
+    ss     = _client().open_by_key(get_rma_sheet_id())
     titles = [ws.title for ws in ss.worksheets()]
     need   = len(MASTER_COLUMNS) + 5
     if MASTER_SHEET_NAME in titles:
